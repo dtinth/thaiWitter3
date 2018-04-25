@@ -24,7 +24,7 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 - **Keyboard based.** You can tweet, favorite, reply, retweet, view threads, view images, and so on... all using keyboard.
 
-- **Desktop notifications.** Get notified even when you’re working on something else. Doesn’t work anymore because it relies on the old `webkitNotifications` API from 2010.
+- **Desktop notifications** — Get notified even when you’re working on something else. Doesn’t work anymore because it relies on the old `webkitNotifications` API from 2010.
 
 - **Show Client** — See who uses what to post to Twitter.
 
@@ -54,9 +54,11 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 - **Hardcode Mode** — Removes the top bar and tweet input area at the bottom (you have to remember the keyboard shortcut). Start typing to activate the tweet input box.
 
-- **Username Autocomplete** — Completes the user name as you type.
+- **Smart Username Autocomplete** — Completes the user name as you type. It uses an algorithm to determine who you might want to tweet to the most, and rank the suggestions accordingly.
 
 - **Custom CSS** — Allows you to put your own CSS to customize the UI.
+
+- **Lots of easter eggs.** Can you find them all?
 
 ## Tech stuff
 
@@ -82,9 +84,19 @@ You are looking at a code that’s more than 5 years old...
 
 - **Frontend code is written in a custom compile-to-JS language**, thaiJS, which adds classes (transpiles to twcs), [method binding](https://github.com/tc39/proposal-bind-operator), [protected and private fields](https://github.com/tc39/proposal-private-fields) to JavaScript. [The compiler](./lib/thaijs/lib/thaiJS.coffee) is written in CoffeeScript and is 260 lines long.
 
+  At first I thought this was a good idea. Back then there is not many JS tooling. JSHint was not released back then. So I only need to create a transpiler and Vim syntax file and that would be it.
+
+  Nowadays, there are many tools like ESLint, Babel, and free modern IDEs that offers JavaScript IntelliSense. They won’t work with thaiJS.
+
+- **6000 lines of code [in one file](client/js/js.thaijs).**
+
+- I even implemented support for touch scrolling in iOS 3.x, which required me to [implement touch handling and momentum scrolling](https://github.com/dtinth/thaiWitter3/blob/1ab365252f05118fdf6c218d8536b2a880814191/client/js/js.thaijs#L5364-L5944) myself, as `-webkit-overflow-scrolling` didn’t exist yet.
+
 - **No automated tests.** This is one of the big reason I cannot keep maintaining this. As I add more feature and code gets more complex, I become less confident in changing code.
 
 - **Lots of monkeypatching.** To avoid changing old code, I try to adopt an approach where I don’t have to modify old code, but writing new code to patch old code at runtime. I thought it would be great. As it turned out, it leads to even harder maintenance.
+
+- **No module system.** Most stuffs are declared as global variables.
 
 ### Server
 
