@@ -1,0 +1,439 @@
+
+
+class Application {
+	registerComponents() {
+		this.register('autoCompleter', new AutoCompleter());
+		super;
+	}
+	launchApplication() {
+		super;
+		this.locate('autoCompleter').launch();
+	}
+}
+
+class ACUtils implement {
+	atRegex = new RegExp(ATSIGN_REGEX + '$|\s+$|^$');
+	atRegexStrict = new RegExp(ATSIGN_REGEX + '$');
+	regex = new RegExp(MENTIONS_REGEX + '$');
+	mentions = new RegExp(MENTIONS_REGEX, 'g');
+}
+
+class ACInteractionRecord implement {
+	@db = {};
+	@changed = false;
+	@loaded = false;
+	add(user, time) {
+		var c = @db[user.id];
+		if (!c) {
+			c = @db[user.id] = new ACInteractionRecord(user);
+			user.interaction = c;
+		}
+		c.setLastInteracted(time);
+		@changed = true;
+	}
+	load() {
+		var d = JSON.parse(sessionStorage.getItem('autocompleteDB'));
+		if (!d) throw new Error('empty database!');
+		for (var i = 0; i < d.length; i ++) {
+			this.add(UserRecord.makeUser(d[i]), d[i].lastInteracted);
+		}
+		@loaded = true;
+	}
+	setLoaded() {
+		@loaded = true;
+	}
+	save() {
+		if (!@loaded) return;
+		if (!@changed) return;
+		@changed = false;
+		var o = [];
+		for (var k in @db) {
+			var c = @db[k];
+			if (c.getLastInteracted() > -1) {
+				o.push({
+					lastInteracted: c.getLastInteracted(),
+					id_str: k,
+					screen_name: c.getUser().username,
+					name: c.getUser().name
+				});
+			}
+		}
+		if (o.length == 0) {
+			sessionStorage.setItem('autocompleteDB', '');
+		} else {
+			sessionStorage.setItem('autocompleteDB', JSON.stringify(o));
+		}
+	}
+	delayedSave() {
+		clearTimeout(@delay);
+		@delay = setTimeout(this::save, 1000);
+	}
+} prototype implement {
+	init(user) {
+		@user = user;
+		@lastInteracted = -1;
+	}
+	setLastInteracted(time) {
+		if (time > @lastInteracted) @lastInteracted = time;
+	}
+	getLastInteracted()  @lastInteracted;
+	getUser()  @user;
+}
+
+
+class UserRecord {
+	load() {
+		super;
+		ACDatabase.addUser(this);
+	}
+}
+
+class Feed {
+	handleFirstLoad() {
+		super;
+		#autoCompleter.loadDatabase();
+	}
+}
+
+class Tweet {
+	load() {
+		var r = super;
+		if (this.mention) {
+			ACInteractionRecord.add(this.user, this.date.getTime());
+		}
+		if (this.mine && this.entities) {
+			if (this.entities && this.entities.user_mentions) {
+				var l = this.entities.user_mentions;
+				for (var j = 0; j < l.length; j ++) {
+					ACInteractionRecord.add(UserRecord.makeUser(l[j]), this.date.getTime());
+				}
+			}
+		}
+		ACInteractionRecord.delayedSave();
+		return r;
+	}
+}
+
+class OptionsUI.options.push(
+	{
+		title: 'Username AutoComplete',
+		description: 'Automatically display a popup of users when you type @. (Note: you can use Tab even when this is disabled.)',
+		key: 'usernameAutoComplete',
+		options: {
+			'0': 'Off',
+			'1': 'On'
+		},
+		renderTo: 'tdmoar'
+	}
+);
+
+class AutoCompleter {
+	init() {
+	}
+	launch() {
+		@view = new ACView();
+		@touch = !!(#touch && #touch.isTouch());
+		@view.setTouchMode(@touch);
+		@view.onclick = this::onclick;
+	}
+	loadDatabase() {
+		try {
+			ACInteractionRecord.load();
+		} catch (e) {
+			this.loadDatabaseFromServer();
+		}
+	}
+	loadDatabaseFromServer() {
+		var pg = new Progress('Loading Autocomplete Data');
+		var xh = new XH('GET', #config.api.completedb);
+		xh.oncomplete = function(response) {
+			try {
+				var d = T.parseJSON(response);
+				for (var i = 0; i < d.length; i ++) {
+					ACInteractionRecord.add(UserRecord.makeUser(d[i]), d[i].lastInteracted);
+				}
+				ACInteractionRecord.setLoaded();
+				ACInteractionRecord.save();
+				pg.ok('Autocomplete Data Loaded');
+			} catch (e) {
+				pg.fail('Autocomplete Data Failed to Load!');
+				throw e;
+			}
+		}.b(this);
+		xh.send();
+	}
+	handle(match, prefix) {
+		if (@state && @state.isActivated()) {
+			return;
+		}
+		if (!@state || @state.getPrefix() != prefix) {
+			var list = ACDatabase.getList(prefix);
+			if (list.length > 0) {
+				@state = new ACState(match, list);
+				@view.update(@state);
+			} else {
+				this.clear();
+			}
+		}
+	}
+	onclick(index) {
+		if (@state) {
+			var previous = @state.getText();
+			@state.setIndex(index);
+			var current = @state.getText();
+			#tweetBox.replaceTextBeforeSelection(previous.length, current);
+			this.clear();
+		}
+	}
+	handleKey(kc, e, tb) {
+		if (!@state && (kc == 9 || (kc == 32 && e.ctrlKey))) {
+			if (!tb.hasSelectedText()) {
+				var t = tb.getTextBeforeSelection(), m;
+				if ((m = t.match(ACUtils.regex))) {
+					this.handle(m[2] + m[3], m[3].toLowerCase());
+				} else if ((m = t.match(ACUtils.atRegex))) {
+					if (!m[1]) m[1] = '';
+					this.handle(m[1], '$');
+				}
+			}
+		}
+		if (@state) {
+			if (kc == 9 || kc == 38 || kc == 40) {
+				var previous = @state.getText();
+				if (!@state.isActivated()) {
+					@state.activate();
+				} else {
+					@state.next((kc == 40 ? -1 : 1) * (e.shiftKey ? -1 : 1));
+				}
+				var current = @state.getText();
+				tb.replaceTextBeforeSelection(previous.length, current);
+				@view.update(@state);
+				return false;
+			} else if (kc != 16) {
+				this.clear();
+				if (kc == 13) return false;
+			}
+		}
+	}
+	shouldAutoComplete() {
+		return PREF('usernameAutoComplete') == '1';
+	}
+	handleCharacter(e, tb) {
+		if (this.shouldAutoComplete() && e.charCode) {
+			if (!tb.hasSelectedText()) {
+				var t = tb.getTextBeforeSelection(), m;
+				if ((m = t.match(ACUtils.regex))) {
+					this.handle(m[2] + m[3], m[3].toLowerCase());
+				} else if (@touch && (m = t.match(ACUtils.atRegexStrict))) {
+					this.handle(m[0], '$');
+				}
+			}
+		}
+	}
+	clear() {
+		if (@state) {
+			@state = null;
+			@view.clear();
+		}
+	}
+}
+
+class TweetBox {
+	checkCharacter(e) {
+		super;
+		#autoCompleter.handleCharacter(e, this);
+	}
+}
+
+class TweetBoxKeyHandler {
+	keyDown(kc, e) {
+		var v = #autoCompleter.handleKey(kc, e, @tweetBox);
+		if (v === true || v === false) return v;
+		return super;
+	}
+}
+
+class ACView {
+	init() {
+		@popup = new TweetBarPopup('left');
+		@placeholder = C('ac-placeholder');
+		@element = C('ac-users');
+		@element.onclick = this::elementOnclick;
+		@popup.getContentElement().appendChild(@element);
+		@popup.getContentElement().appendChild(@placeholder);
+		@subviews = [];
+		@visible = {};
+		@count = 0;
+		@touch = false;
+	}
+	elementOnclick(e) {
+		var c = e.target;
+		for (; c && c != @element; c = c.parentNode) {
+			if (c.getAttribute) {
+				var d = parseInt(c.getAttribute('data-tw-ac-index'));
+				this.onclick(d); return false;
+			}
+		}
+	}
+	onclick(i) {
+	}
+	setTouchMode(touch) {
+		@touch = !!touch;
+	}
+	createSubview(index) {
+		var el = C('ac-user ac-user-hidden');
+		@element.appendChild(el);
+		return el;
+	}
+	getSubview(index) {
+		while (@count <= index) {
+			@subviews[@count] = this.createSubview(@count);
+			@count++;
+		}
+		return @subviews[index];
+	}
+	update(state) {
+		var list = state.getList();
+		var index = 0;
+		var selectedIndex = state.getIndex();
+		var visible = {};
+		var max = 7;
+		for (var i = Math.max(0, Math.min(selectedIndex - Math.floor(max / 2), list.length - max)); index < max && i < list.length; i ++) {
+			var j = @touch ? index : max - index;
+			var sub = this.getSubview(j);
+			index++;
+			sub.innerHTML = list[i].username;
+			sub.className = 'ac-user ac-user-' + (i == selectedIndex ? 'selected' : 'visible');
+			sub.setAttribute('data-tw-ac-index', i);
+			visible[j] = true;
+		}
+		for (var k in @visible) {
+			if (!visible[k]) {
+				this.getSubview(parseInt(k)).className = 'ac-user ac-user-hidden';
+			}
+		}
+		@visible = visible;
+		@popup.show();
+		@placeholder.style.width  = @element.offsetWidth + 'px';
+		@placeholder.style.height = @element.offsetHeight + 'px';
+		@popup.updateHeight();
+	}
+	clear() {
+		@popup.hide();
+	}
+}
+
+class ACState {
+	init(prefix, list) {
+		@prefix = prefix;
+		@list = list;
+		@activated = false;
+		@index = -1;
+	}
+	activate() {
+		@activated = true;
+		@index = 0;
+	}
+	next(increment) {
+		@index += increment;
+		if (@index < -1) @index = @list.length - 1;
+		if (@index >= @list.length) @index = -1;
+	}
+	setIndex(index) {
+		@activated = true;
+		@index = index;
+	}
+	getCurrent() {
+		if (!@activated) return null;
+		if (@index == -1) return null;
+		return @list[@index];
+	}
+	getText() {
+		var current = this.getCurrent();
+		return current ? '@' + current.username : @prefix;
+	}
+	isActivated()  @activated;
+	getPrefix()  @prefix;
+	getList()    @list;
+	getIndex()   @index;
+}
+
+class ACDatabase implement {
+
+	@map = {};
+	@prefixes = {};
+
+	getList(prefix) {
+		if (prefix == '') prefix = '$';
+		if (!@prefixes[prefix]) return [];
+		return @prefixes[prefix].getList();
+	}
+
+	addUser(user) {
+		var name = user.normalizedUsername;
+		if (@map[user.id]) {
+			return;
+		}
+		@map[user.id] = user;
+		this.addPrefixEntry('$', user);
+		for (var i = 1; i <= name.length; i ++) {
+			this.addPrefixEntry(name.substr(0, i), user);
+		}
+	}
+
+	addPrefixEntry(prefix, user) {
+		if (!@prefixes[prefix])
+			@prefixes[prefix] = new ACPrefix();
+		@prefixes[prefix].add(user);
+	}
+
+}
+
+class ACPrefix {
+
+	init() {
+		@list = [];
+		@length = 0;
+		@dirty = false;
+	}
+
+	add(user) {
+		@list[@length++] = user;
+		@dirty = true;
+	}
+
+	sort() {
+		var compare = function(a, b, c) {
+			if (a == b) return c ? c() : 0;
+			return a < b ? -1 : 1;
+		};
+		var now = new Date().getTime();
+		var rank = function(x) {
+			if (!x.interaction) return 0;
+			var diff = (now - x.interaction.getLastInteracted()) / 1000;
+			if (diff < 60) return -10;
+			if (diff < 600) return -9;
+			if (diff < 7200) return -8;
+			if (diff < 86400) return -7;
+			if (diff < 7 * 86400) return -6;
+			return 0;
+		};
+		@list.sort(function(a, b) {
+			return compare(rank(a), rank(b), function() {
+				return compare(a.normalizedUsername, b.normalizedUsername);
+			});
+		});
+	}
+
+	getList() {
+		if (@dirty) {
+			@dirty = false;
+		}
+		this.sort();
+		return @list.slice();
+	}
+
+}
+
+
+

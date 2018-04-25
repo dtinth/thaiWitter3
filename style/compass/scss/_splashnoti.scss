@@ -1,0 +1,28 @@
+.splash-noti {
+	@include fixed;
+	top: 100px;
+	left: 0;
+	width: 100%;
+	font: 25pt "Lucida Grande", "Segoe UI", Verdana, sans-serif;
+	text-align: center;
+	color: #ffffff;
+	display: none;
+	z-index: 999999;
+}
+.spn-inner {
+	display: -moz-inline-box;
+	display: inline-block;
+	zoom: 1;
+	padding: 3px 10px;
+	background: #000000;
+	background: rgba(0, 0, 0, 0.5);
+	-moz-border-radius: 4px;
+	-webkit-border-radius: 4px;
+	border-radius: 4px;
+}
+.spn-cool {
+	color: rgba(0, 0, 0, 0)
+}
+.spn-cool .spn-inner {
+	background: transparent;
+}

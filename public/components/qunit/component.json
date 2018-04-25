@@ -1,0 +1,16 @@
+{
+  "name": "qunit",
+  "version": "1.10.0",
+  "main": [
+    "./qunit.js",
+    "./qunit.css"
+  ],
+  "gitHead": "c34f18a5e81b72c2f1706a8ea1d22cd5dc898279",
+  "_id": "qunit@1.10.0",
+  "readme": "ERROR: No README.md file found!",
+  "description": "ERROR: No README.md file found!",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/components/qunit.git"
+  }
+}

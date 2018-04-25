@@ -1,0 +1,605 @@
+
+@mixin fixed {
+	position: fixed;
+	.touch-mode & { position: absolute; }
+}
+
+// == Body ==
+.body {
+	padding: 0;
+	margin: 0;
+	cursor: default;
+	background: #353433;
+	overflow: hidden;
+	color: #e9e8e7;
+	@extend .main-font;
+}
+.main-font {
+	font: 10pt Verdana, Tahoma, sans-serif;
+}
+
+// == Various Things ==
+.help {
+	color: #999;
+}
+.key-hiny {
+	color: #bbb;
+}
+.clear-left {
+	clear: left;
+}
+.link {
+	cursor: pointer;
+}
+
+// == Option Specific ==
+.docs-link-container {
+	text-align: center;
+	margin-top: 7px;
+}
+
+// == Listbox ==
+#help-description, #fb-description { max-width: 25em; }
+.listbox {
+	display: inline-block;
+	margin-right: 24px;
+	vertical-align: top;
+}
+.listbox-title {
+	padding-left: 5px;
+	padding-bottom: 0.5ex;
+}
+.listbox-loading {
+	padding: 0 5px 10px;
+	font-weight: bold;
+}
+.listbox-item {
+	display: block;
+	padding: 3px 5px;
+	color: #E9e8e7;
+	cursor: pointer;
+	&:hover {
+		background: #252423;
+	}
+}
+
+// == Facebook ==
+.fb-data {
+	text-align: center;
+}
+#fb-user {
+	font-weight: bold;
+	color: #bef;
+	&.fb-connected {
+		margin-top: 0.6ex;
+	}
+}
+
+// == Intro Text and Welcome Text ==
+h1 {
+	font: bold 30px Helvetica, Free Sans, FreeSans, Arial, sans-serif;
+	padding-top: 50px;
+	text-align: center;
+	a {
+		color: #8b8685;
+		text-decoration: none;
+	}
+}
+.welcome {
+	text-align: center;
+	padding-bottom: 10px;
+	border-bottom: 2px solid #444;
+}
+
+// == Header and Options ==
+.head {
+	@include fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	background: #090807;
+	border-bottom: 1px solid #454443;
+	z-index: 1;
+	line-height: 1.03em;
+}
+.options {
+	@include fixed;
+	top: 0;
+	left: 15px;
+	margin-right: 20px;
+	z-index: 2;
+	visibility: hidden;
+	overflow: hidden;
+}
+.options-floater {
+	position: relative;
+	background: #232425;
+	border: 1px solid #454443;
+	border-top: 0;
+}
+.status-section {
+	float: right;
+}
+.options-inner {
+	// padding: 2px 10px 11px;
+}
+.head-inner {
+	padding: 0 5px;
+}
+.menu-item, .status-item {
+	display: inline-block;
+	padding: 5px 7px;
+}
+.menu-item {
+	cursor: pointer;
+	&:hover {
+		background: #454443;
+	}
+}
+.menu-access {
+	color: #d7fc70;
+	text-decoration: underline;
+}
+.menu-access-alt {
+	color: #d770fc;
+	text-decoration: underline;
+}
+
+// == Option Tabs ==
+.menu-item-open#menu-additional {
+	background: #222324;
+}
+.options-tab-content {
+	@extend .help;
+	padding: 10px 10px;
+	background: #090807;
+}
+.tabls {
+	text-align: left;
+	padding: 0 20px 0;
+}
+.tabls-item {
+	display: inline-block;
+	margin: 0 2px;
+	padding: 3px 7px;
+	// font-weight: bold;
+	position: relative;
+	cursor: pointer;
+	font-size: 8.5pt;
+	border: 1px solid transparent;
+	color: #aaa;
+}
+.tabls-item-active {
+	//background: #999;
+	//color: #000;
+	color: #fff;
+	border: 1px solid #353433;
+	background: #090807;
+}
+.tabls-top    { padding-top:    3px; border-bottom: 1px solid #353433; .tabls-item { top: 1px;  border-bottom-width: 0; border-top-width: 2px; } }
+.tabls-bottom { padding-bottom: 3px; border-top:    1px solid #353433; .tabls-item { top: -1px; border-top-width:    0; border-bottom-width: 2px; } }
+
+// == Tweeting Area ==
+.tweet-bar {
+	@include fixed;
+	width: 100%;
+	bottom: 0;
+	left: 0;
+	background: #090807;
+	border-top: 1px solid #454443;
+}
+.tweet-area {
+	padding: 0;
+	margin: 0;
+	border: 0;
+	background: transparent;
+	color: #e9e8e7;
+	width: 100%;
+	height: 3em;
+	font-size: 11pt;
+	resize: none;
+	-webkit-appearance: none;
+	outline: none;
+	@extend .main-font;
+}
+.tweet-bar-container {
+	position: relative;
+	padding: 0 0 0 10px;
+}
+
+// == Tweet Bar Anchoring ==
+.tweet-bar-popup-anchor {
+	position: absolute;
+	top: 0px; height: 0px;
+	left: 10px; right: 10px;
+}
+.tweet-bar-popup {
+	position: absolute;
+	bottom: 0px;
+	overflow: hidden;
+	border: 1px solid #454443;
+	border-width: 0 1px;
+	background: #090807;
+}
+.tweet-bar-popup-left { left: 0; }
+.tweet-bar-popup-right { right: 0; }
+.tweet-bar-popup-contents {
+	border-top: 1px solid #454443;
+	border-bottom-width: 0;
+	padding: 3px 7px;
+}
+
+// == Autocomplete ==
+.ac-users {
+	position: absolute;
+	bottom: 3px;
+	left: 7px;
+	white-space: nowrap;
+}
+.ac-user-hidden {
+	display: none;
+}
+.ac-user-selected {
+	font-weight: bold;
+	color: #d7fc70;
+}
+
+// == Image Upload Popup ==
+.image-upload-file {
+	position: relative;
+	overflow: hidden;
+}
+.image-upload-remove-button {
+	position: absolute;
+	right: 0;
+	top: 4px;
+	width: 16px;
+	height: 16px;
+	opacity: 0.5;
+	background: #353433 inline-image("inline-graphics/delete.png") center center no-repeat; cursor: pointer;
+	&:hover { opacity: 1; }
+}
+.image-upload-name {
+	line-height: 22px;
+	height: 22px;
+	overflow: hidden;
+	margin-right: 20px;
+	white-space: nowrap;
+}
+.image-upload-files {
+	width: 240px;
+}
+
+// == Display ==
+.tweet-display {
+	padding: 1000px 0px 1000px;
+	position: relative;
+}
+
+// == Status Element ==
+$picture_size: 24px;
+$picture_margin: 4px;
+$picture_border: 1px;
+$picture_total_height: $picture_size + 2 * ($picture_margin + $picture_border);
+
+.status {
+	padding: 3px 20px;
+}
+.status-content {
+	position: relative;
+}
+.status-picture {
+	position: absolute;
+	top: 0; left: 0;
+	width: $picture_size;
+	height: $picture_size;
+	margin: $picture_margin 0;
+	background: #000;
+	border: $picture_border solid #666;
+	cursor: pointer;
+}
+.status-inner {
+	margin-left: 40px;
+	min-height: $picture_total_height;
+}
+.status-username {
+	text-decoration: none;
+	color: #bef;
+	font-weight: bold;
+}
+.status-date {
+	color: #707172;
+	font-size: 0.8em;
+}
+.status-load {
+	text-align: center;
+	color: #8b8685;
+	padding-top: 5px;
+	padding-bottom: 5px;
+	cursor: pointer;
+}
+.status-related {
+	.status-username-text {
+		text-decoration: underline;
+	}
+}
+.status-selected {
+	background: #898785;
+	.status-date, .status-load {
+		color: #000;
+	}
+}
+.status-filtered {
+	display: none;
+}
+.status-link-this-is-new, .status-date-link, .status-rt-link {
+	@extend .link;
+}
+.status-text {
+	word-wrap: break-word;
+}
+
+// == Highlight Colors ==
+@mixin highlight-username($selector, $color) {
+	#{$selector} .status-username { color: $color; }
+}
+@mixin highlight-text($selector, $color) {
+	#{$selector} .status-text { color: $color; }
+}
+@mixin highlight($selector, $username, $text) {
+	@include highlight-username($selector, $username);
+	@include highlight-text($selector, $text);
+}
+@include highlight('.status-faved',   #ff9, #ffc);
+@include highlight('.status-mention', #f99, #fcc);
+@include highlight('.status-highed',  #99f, #ccf);
+@include highlight-username('.status-reply-to', #afa);
+
+// == Hidden Info ==
+.hidden-info {
+	display: none;
+}
+@mixin hideinfo($key, $selector) {
+	.#{$key}off #{$selector} {
+		@extend .hidden-info;
+	}
+}
+@include hideinfo('ifclient', '.status-client');
+@include hideinfo('ifirp', '.status-in-reply-to');
+
+// == Notifications ==
+.notification-area {
+	@include fixed;
+	z-index: 3;
+	top: 30px;
+	right: 20px;
+}
+.notification {
+	background: #000;
+	padding: 6px;
+	width: -moz-fit-content;
+	margin-left: auto;
+	margin-top: 10px;
+	position: relative;
+}
+
+// == Attribution Style ==
+.attrbt {
+	color: #777;
+	font-size: 8pt;
+	cursor: pointer;
+}
+
+// == Annoucement ==
+.announce {
+	overflow: hidden;
+}
+.announce-wrap {
+	border: 2px solid #494847;
+	max-width: 32em;
+	width: -moz-fit-content;
+	margin: 0 auto;
+	background: #252423;
+	text-align: center;
+	font-size: 9pt;
+	padding: 3px 6px 5px;
+}
+.announce-padder {
+	padding: 7px;
+}
+.announce-title {
+	text-transform: uppercase;
+	font-weight: bold;
+	font-size: 7pt;
+	color: #898785;
+}
+
+// == User Info ==
+.user-about {
+	@extend .announce;
+	height: 0;
+}
+.user-about-padder {
+	@extend .announce-padder;
+	padding-bottom: 0;
+}
+.user-about-wrap {
+	@extend .announce-wrap;
+	padding-bottom: 0;
+}
+.user-about-title {
+	@extend .announce-title;
+}
+.user-about-text {
+	@extend .announce-text;
+	line-height: 1.4;
+	padding-left: 1ex;
+	padding-right: 1ex;
+	.user-realname {
+		font-weight: bold;
+	}
+	.user-realname, .user-stats {
+		display: inline-block;
+		margin-top: 2px; white-space: nowrap;
+	}
+	.user-stats {
+		margin-left: 1ex;
+		margin-right: 1ex;
+		font-size: 8pt;
+	}
+	.user-bio {
+		color: #999;
+		font-size: 8pt;
+		margin-top: 2px;
+	}
+	.menu-item {
+		line-height: normal;
+	}
+}
+
+// == Secondary Status Element ==
+.secondary-container {
+	@include fixed;
+	top: 40px;
+	bottom: 80px;
+	left: 20px;
+	right: 20px;
+	background: #323130;
+	border: 2px solid #8b8685;
+	overflow: hidden;
+}
+.secondary-wrapper {
+	position: absolute;
+	top: 0; right: 0; bottom: 0; left: 0;
+	background: #323130;
+	overflow: hidden;
+}
+.secondary-display {
+	position: relative;
+}
+
+// == Styled Buttons ==
+.newbutton {
+	display: -moz-inline-box;
+	display: inline-block;
+	padding: 1px 10px;
+	line-height: 24px;
+	white-space: nowrap;
+	background: #222324;
+	color: #fff;
+	margin: 1px 0;
+}
+.newbutton:hover {
+	background: #565758; cursor: pointer;
+}
+
+// == Media Preview ==
+.media-preview-container {
+	display: block;
+	overflow: hidden;
+	position: relative;
+	cursor: pointer;
+	img {
+		position: absolute;
+		top: 0; left: 50%;
+	}
+}
+.media-preview-loading {
+	display: inline-block;
+	padding: 15px 20px;
+	background: #252423;
+	border: 2px dashed #555453;
+	line-height: 2.1;
+	color: #8b8685;
+}
+
+.selecti {
+	.span-help {
+		cursor: help;
+	}
+}
+
+@import "select";
+@import "bottombuttons";
+@import "dialog";
+@import "splashnoti";
+
+@import "hardcore";
+@import "easter";
+
+
+// == Tablet Styles ==
+.touch-mode {
+	width: 100%; height: 100%;
+	position: relative;
+	overflow: hidden;
+	margin: 0; padding: 0;
+	-webkit-text-size-adjust: none;
+	body {
+		width: 100%; height: 100%;
+		margin: 0; padding: 0;
+	}
+	.container-of-all {
+		position: absolute;
+		margin: 0; padding: 0;
+		top: 0px; right: 0; bottom: 0; left: 0;
+	}
+	#wrapper, .secondary-wrapper {
+		overflow: hidden;
+		position: absolute;
+		top: 0; right: 0; bottom: 0; left: 0;
+	}
+}
+.mobile {
+	.menu-item, .status-item {
+		font-size: 8.5pt;
+		padding: 8px 2px 9px;
+	}
+	.selecti {
+		padding-bottom: 1px;
+	}
+	#menu-additional {
+		padding-left: 10px;
+		padding-right: 10px;
+	}
+	.tweet-display {
+		line-height: 1.5;
+	}
+}
+.tablet {
+	.ac-user {
+		display: inline-block;
+		padding: 5px 7px;
+		font-size: 12pt;
+	}
+	.ac-user-hidden {
+		display: none;
+	}
+	.menu-item, .status-item {
+		font-size: 11pt;
+		padding: 10px 11px 12px;
+	}
+	.tweet-area {
+		font-size: 15pt;
+	}
+	.tweet-display {
+		font-size: 12pt;
+		line-height: 1.5;
+	}
+	.status {
+		padding: 6px 23px 9px;
+	}
+	.options-inner {
+		font-size: 10.5pt;
+	}
+	.tabls-item {
+		font-size: 10pt;
+	}
+	.status-text {
+		line-height: 1.8ex;
+	}
+}
+
+.ifiosthaion .thai-text {
+	font-size: 120%;
+}

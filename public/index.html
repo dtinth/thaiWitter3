@@ -1,0 +1,63 @@
+<!DOCTYPE html><meta http-equiv=Content-Type content="text/html;charset=utf-8"><meta charset=utf-8><title>thaiWitter</title><style>
+body { background: #353433; color: #8b8685; font: 10pt Verdana, sans-serif; text-align: center; margin: 0; padding: 20px; }
+p { line-height: 1.8; margin: 1em 0; }
+h1 { font: bold 30pt/1.2 Free Sans, FreeSans, Helvetica, Arial, sans-serif; margin: 0.5em 0; }
+ul { display: block; margin: 0 0 32px; padding: 0; }
+li { display: inline; display: inline-block; width: 300px; margin: 0 16px; padding: 0; vertical-align: top; line-height: 1.8; }
+li.s { }
+a { color: #9b9695; }
+a.title { color: #ffb; text-decoration: none; }
+.title { font-size: 1.3em; display: block; width: 100%; margin: 0; padding: 0.3em 0; line-height: 2; }
+a:focus { color: #e9e8e7; outline: 2px solid #454443; }
+.foot { color: #555453; }
+.foot a { color: #656463 }
+.stat { color: #353433; }
+</style><link rel="shortcut icon" href="thaiWitter/favicon.ico"></head><body>
+<h1>Welcome to thaiWitter</h1>
+<p><img src="thaiWitter.png" width=281 height=281></p>
+<ul>
+	<li><a href="thaiWitter/" class=title>Web Version</a>
+		quickest way to use thaiWitter. supports Firefox and MobileSafari.
+		Also check out <a href="https://github.com/dtinth/twclient2">thaiWitter Client Extension for Firefox</a> to
+		enable user stream and popup notifiations inside your browser.
+	<li class=s><a href="http://me.dt.in.th/page/thaiWitterDownload" class=title>Desktop Version</a>
+		you can download a desktop version and run it as a standalone Twitter client.
+		Available for Windows, Mac and Linux.
+		It's based on Mozilla Prism and has support for user stream and popup notifications built in.
+</ul>
+<ul>
+	<li><a href="http://docs.dt.in.th/thaiWitter/" class=title>Documentation</a>
+		read the features, changelogs, usage guide and keyboard shortcut reference.
+	<li class=s>
+		<span class=title>&nbsp;</span>
+		<span id=status>...<br /><br />&nbsp;</span>
+</ul>
+<p class="foot">made by <a href="https://twitter.com/dtinth">@dtinth</a></p>
+
+<script>
+function getJSONP(url, fn) {
+	var s = document.createElement('script');
+	s.src = url + '?callback=' + fn;
+	s.type = 'text/javascript';
+	document.body.appendChild(s);
+}
+function formatUptime(x) {
+	if (x < 60 * 1000) return Math.floor(x / 1000) + 's';
+	if (x < 3600 * 1000) return Math.floor(x / 60 / 1000) + 'm';
+	if (x < 86400 * 1000) return Math.floor(x / 3600 / 1000) + 'h';
+	return Math.floor(x / 86400 / 1000) + 'd ' + Math.floor((x % (86400 * 1000)) / 3600 / 1000) + 'h';
+}
+function gotStatus(v) {
+	document.getElementById('status').innerHTML =
+		'current version : ' + v.version + '<br />' +
+		(v.deployed == 0 ? '<br />' : 'deployed : ' + formatUptime(v.deployed) + ' ago<br />') +
+		'<span class="stat">' +
+			'uptime : ' + formatUptime(v.stats.uptime) + ', mem : ' + Math.ceil(v.memory / 1048576) + 'm'
+		'</span>';
+}
+window.onload = function() {
+	getJSONP('thaiWitter/api/twstatus', 'gotStatus');
+};
+</script>
+
+

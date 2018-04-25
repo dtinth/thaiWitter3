@@ -1,0 +1,17 @@
+<!DOCTYPE html><title>Facebook API Handler</title>
+<style>body { background: #353433; color: #8b8685; } h1 { font: bold 30px Helvetica, arial, sans-serif; margin: 1em; padding: 0; text-align: center; }</style>
+<body>
+<h1>hold on a sec</h1>
+<script>
+window.onload = function() {
+	var m;
+	if ((m = location.hash.match(/redir=(.+)/))) {
+		location.replace(unescape(m[1].replace(/,/g, '%')));
+	} else {
+		if (window.opener) {
+			window.opener.app.locate('facebookController').checkSession(true);
+		}
+		window.close();
+	}
+};
+</script>

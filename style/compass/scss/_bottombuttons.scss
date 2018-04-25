@@ -1,0 +1,20 @@
+
+.bottom-buttons {
+	position: fixed;
+	bottom: 4px;
+	right: 4px;
+}
+
+.bottom-button {
+	opacity: 0.5;
+	width: 20px; height: 20px; display: inline-block;
+	margin-left: 6px; cursor: pointer;
+}
+
+.btn-facebook    { background: inline-image("inline-graphics/facebook.png")    center center no-repeat; cursor: pointer; }
+.btn-geolocation { background: inline-image("inline-graphics/geolocation.png") center center no-repeat; }
+
+.btn-invisible { display: none; }
+.btn-fb-noupdate { opacity: 0.3; }
+.btn-fb-update { opacity: 0.8; }
+.btn-dimmed { opacity: 0.2; }

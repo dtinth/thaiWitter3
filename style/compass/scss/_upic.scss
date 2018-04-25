@@ -1,0 +1,36 @@
+
+// == Upic Upload ==
+.upic, .upicup {
+	width: 300px;
+	margin: 0 auto 5px;
+	height: 32px;
+	position: relative;
+	text-align: left;
+	background: top left no-repeat image-url("upic/drop.gif");
+}
+.upic {
+	.upicfilename { display: none; }
+	.upicmask { display: none; }
+}
+.upicup {
+	background-position: bottom left;
+	.upicfilename {
+		color: #e9e7e5;
+		font: 14px Verdana, sans-serif;
+		text-shadow: 0 -1px 0 rgba(0,0,0,0.4);
+		text-indent: 16px;
+		line-height: 29px;
+		height: 32px;
+		overflow: hidden;
+		white-space: nowrap;
+		width: 236px;
+	}
+	.upicmask {
+		position: absolute;
+		left: 197px;
+		top: 0;
+		width: 40px;
+		height: 32px;
+		background: image-url("upic/mask.png") top right no-repeat;
+	}
+}

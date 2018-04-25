@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>#thaiWitter Spec</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="../components/mocha/mocha.css" />
+<style>
+body { background: #090807; color: #e9e8e7; }
+#mocha-stats em { color: #ccc; }
+</style>
+<script src="/assets/vendor/q.min.js"></script>
+<script src="../components/mocha/mocha.js"></script>
+<script src="../components/sinon/lib/sinon.js"></script>
+<script src="../components/sinon/lib/sinon/spy.js"></script>
+<script src="../components/chai/chai.js"></script>
+<script>mocha.setup('bdd'); expect = chai.expect</script>
+
+<script src="/assets/vendor/underscore-min.js"></script>
+<script src="/assets/lib/dtjs2.js"></script>
+<script src="/assets/lib/twcs.js"></script>
+<script src="/assets/T/Y.js"></script>
+<script src="/assets/T/T.js"></script>
+<script src="/assets/T/twitter-regex.js"></script>
+<script src="/assets/T/events.js"></script>
+<script src="/assets/T/future.js"></script>
+<script src="/assets/T/date.js"></script>
+<script src="/assets/T/text.js"></script>
+<script src="/assets/T/request.js"></script>
+<script src="/assets/T/task.js"></script>
+
+<script src="/assets/test/spec_helper.js"></script>
+<script src="/assets/test/Y_spec.js"></script>
+<script src="/assets/test/T_spec.js"></script>
+<script src="/assets/test/events_spec.js"></script>
+<script src="/assets/test/future_spec.js"></script>
+<script src="/assets/test/request_spec.js"></script>
+<script src="/assets/test/date_spec.js"></script>
+<script src="/assets/test/text_spec.js"></script>
+<script src="/assets/test/task_spec.js"></script>
+</head>
+<body>
+
+<div id="mocha"></div>
+
+<script>
+if (window.mochaPhantomJS) { mochaPhantomJS.run(); }
+else { mocha.run(); }
+</script>
+
+</body>
+</html>

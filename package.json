@@ -1,0 +1,38 @@
+{
+  "name": "thaiwitterserver",
+  "version": "0.3.0",
+  "private": true,
+  "dependencies": {
+    "coffee-script": "~1.4.0",
+    "connect": "2.7.1",
+    "dotenv": "^5.0.1",
+    "express": "3.0.4",
+    "hjs": "0.0.4",
+    "levenshtein": "1.0.1",
+    "oauth": "0.9.9",
+    "q": "0.8.11",
+    "request": "2.12.0",
+    "send": "~0.1.0"
+  },
+  "engines": {
+    "node": "0.10.10",
+    "npm": "1.2.25"
+  },
+  "devDependencies": {
+    "should": "~1.2.1",
+    "mocha-as-promised": "~1.2.1",
+    "chai-as-promised": "~3.2.4",
+    "chai": "~1.5.0",
+    "sinon-chai": "~2.3.1",
+    "sinon": "~1.5.2",
+    "mocha-phantomjs": "~2.0.2",
+    "mocha": "~1.10.0",
+    "js-yaml": "~2.0.5",
+    "twitter-text": "~1.6.1"
+  },
+  "scripts": {
+    "test-server": "node_modules/.bin/mocha",
+    "test-client": "bin/client_unit_test",
+    "test": "npm run test-server && npm run test-client"
+  }
+}

@@ -1,0 +1,51 @@
+
+.tw-dialog {
+	border: 2px solid #737271;
+	@include fixed;
+	left: 50%;
+	background: #000;
+	text-align: center; display: none; z-index: 3;
+}
+.tw-dialog-title {
+	font: bold 14pt "Verdana", Tahoma, sans-serif;
+	color: #797877;
+	padding: 0.7em 0 0.6em;
+}
+.tw-dialog-footer {
+	color: #696867;
+	padding: 0.8em 1.5em 1.2em;
+	font: 8pt "Verdana", Tahoma, sans-serif;
+}
+
+
+.uploadform {
+	@extend .tw-dialog;
+	z-index: 4;
+}
+.uptitle {
+	@extend .tw-dialog-title;
+}
+.upthx {
+	@extend .tw-dialog-footer;
+}
+.uplnk {
+	@extend .link;
+}
+
+
+.relogin {
+	@extend .tw-dialog;
+}
+.rltitle {
+	@extend .tw-dialog-title;
+}
+.rldata {
+	padding: 0.4em 1.4em;
+}
+.rllnk {
+	@extend .link;
+	@extend .status-username;
+}
+
+
+

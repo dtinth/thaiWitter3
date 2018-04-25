@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html class="thaiWitter">
+<head>
+	<title>thaiWitter</title>
+	<link rel="stylesheet" href="{{style}}">
+	<meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0; user-scalable=no">
+	<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="chrome=1" />
+	<meta name="format-detection" content="telephone=no">
+	<link rel="apple-touch-icon" href="touch-icon.png"/> 
+	<link rel="shortcut icon" href="favicon.ico">
+</head>
+<body class="body"><div id="container-of-all" class="container-of-all">
+
+<h1 id="ltmc"><a rel="source" href="http://tw.dt.in.th/">thaiWitter</a></h1>
+<div class="splash-noti" id="spnt-text"><span class="spn-inner" id="spnt-inner"></span></div>
+
+<div id="head" class="head">
+	<div class="head-inner">
+		<div class="status-section">
+			<span class="status-item" id="status-scroll" title="Position">0 / 0</span>
+			<span class="status-item" id="status-chars" title="Status Text Limit">140</span>
+		</div>
+		<span class="menu-item" id="menu-refresh">
+			<b class="menu-access">R</b>efresh
+		</span>
+		<span class="menu-item" id="menu-retweet">
+			Retwee<b class="menu-access">t</b>
+		</span>
+		<span class="menu-item" id="menu-reply">
+			Repl<b class="menu-access">y</b>
+		</span>
+		<span class="menu-item" id="menu-fave">
+			Fav<b class="menu-access">e</b>
+		</span>
+		<span class="menu-item" id="menu-additional">
+			▼
+		</span>
+	</div>
+</div>
+
+<div class="options" id="options"><div id="options-floater" class="options-floater">
+	<div class="options-inner">
+		<div class="tabls tabls-top">
+			<span id="tboption" class="tabls-item tabls-item-active">Options</span>
+			<span id="tbhelpme" class="tabls-item">Help</span>
+			<span id="tbabout" class="tabls-item">About</span>
+			<span onclick="open_link('http://docs.dt.in.th/thaiWitter/Download')" id="install-tw" class="tabls-item">Install</span>
+			<span onclick="location.reload()" id="reload-tw" class="tabls-item">Clear</span>
+		</div>
+		<div class="options-tab-content" id="tdoption">
+		</div>
+		<div class="options-tab-content" id="tdhelpme">
+			<div id="help-description">
+				<span class="key-hiny">Up</span>, <span class="key-hiny">down</span>, <span class="key-hiny">page up</span>, <span class="key-hiny">page down</span>, <span class="key-hiny">home</span>, <span class="key-hiny">end</span>, and <span class="key-hiny">mouse wheel</span> scrolls the timeline.
+				You can <span class="key-hiny">type</span> your tweets right away. While you are writing your tweet you can't scroll except you hold down Ctrl.
+				<span class="key-hiny">Enter</span> sends your tweet, <span class="key-hiny">Ctrl+R</span> refreshes the timeline, <span class="key-hiny">Ctrl+T</span> retweets the selected tweet, <span class="key-hiny">Ctrl+Y</span> replies to the selected tweet.
+				<span class="key-hiny">Ctrl+F</span> and <span class="key-hiny">Ctrl+G</span> searches the timeline using the text in the tweet box.
+				<div class="selecti docs-link-container">
+					<span id="docs-link" onclick="open_link('http://docs.dt.in.th/thaiWitter/')" class="newbutton">Go To Documentation</span>
+				</div>
+			</div>
+		</div>
+		<div class="options-tab-content" id="tdabout">
+			<div style="text-align: center">
+				<b>thaiWitter</b><br />made by Thai Pangsakulyanont<br />
+				<span onclick="open_link('http://twitter.com/dtinth')" class="attrbt">(@dtinth)</span><br /><br />
+				{{#powered}}
+					{{{html}}}<br>
+				{{/powered}}
+			</div>
+		</div>
+		<div id="tdspwn" class="options-tab-content">
+			<div style="text-align: center">
+<div class="selecti">
+	<span data-tw-popup="1" id="new-home" class="newbutton">New H<b class="menu-access">o</b>me Timeline Window</span>
+</div>
+<div class="selecti">
+	<span data-tw-popup="1" id="new-mentions" class="newbutton">New Mentio<b class="menu-access">n</b>s Window</span>
+</div>
+<div class="selecti">
+	<span data-tw-popup="1" id="new-dms" class="newbutton">New DM<b class="menu-access">.</b> Window</span>
+</div>
+<div class="selecti">
+	<span data-tw-popup="1" id="new-fav" class="newbutton">New Favorites Window</span>
+</div>
+<div class="selecti">
+	<span data-tw-popup="1" id="new-userlist" class="newbutton">New <b class="menu-access">U</b>ser/List Window</span>
+</div>
+<div class="selecti">
+	<span data-tw-popup="1" id="new-search" class="newbutton">New <b class="menu-access">S</b>earch Window</span>
+</div>
+			</div>
+		</div>
+		<div class="options-tab-content" id="tdmoar">
+			<div style="text-align: center">
+
+				<span class="menu-item" id="menu-image">
+					Upload <b class="menu-access">I</b>mage
+				</span><br />
+				<span class="menu-item" id="menu-hlwords">
+					Edit <b class="menu-access-alt" title="Ctrl+Alt+">H</b>ighlight Keywords
+				</span><br />
+				<span class="menu-item" id="menu-ftwords">
+					Edit Exclude Keywords
+				</span><br />
+				<span class="menu-item" id="menu-logout">
+					Logout / Change Account
+				</span>
+
+			</div>
+		</div>
+
+		<div class="options-tab-content" id="tdlss">
+			<div class="listbox">
+				<div class="listbox-title">Lists</div>
+				<div id="listslist"></div>
+			</div>
+			<div class="listbox">
+				<div class="listbox-title">Searches</div>
+				<div id="searcheslist"></div>
+			</div>
+			<div class="selecti docs-link-container">
+				<span id="lssbutton" class="newbutton">Reload Lists</span>
+			</div>
+		</div>
+
+		<div class="options-tab-content" id="tdfb">
+			<div id="fb-option"></div>
+			<div class="fb-data" id="fb-data">
+				Status: <span id="fb-status">Not Connected</span>
+				<div id="fb-user"></div>
+				<div class="selecti docs-link-container" id="fb-connect-button-container">
+					<span id="fb-connect-button" class="newbutton" data-tw-popup="1">-</span>
+				</div>
+			</div>
+			<div id="fb-description">
+				This option lets you update your Facebook status when you tweet.
+				Please <span onclick="open_link('https://twitter.com/settings/profile')" class="link">disable
+				Twitter's built-in Facebook integration from your profile</span> before enabling this, as
+				they work independently.
+			</div>
+		</div>
+
+		<div class="tabls tabls-bottom">
+			<span id="tbspwn" class="tabls-item">New Window</span>
+			<span id="tbmoar" class="tabls-item">More</span>
+			<span id="tblss"  class="tabls-item">Lists</span>
+			<span id="tbfb"  class="tabls-item">Fb<span title="EXPERIMENTAL FEATURE!" style="cursor:help;position:relative;font-size:0.75em;top:-0.6em;">(&beta;)</span></span>
+		</div>
+
+	</div>
+</div></div>
+
+<div style="display: none">
+	<div id="rldata" class="rldata">
+		A session error has occured. Please <span id="reloginlink1" class="rllnk">click here</span> to
+		reauthenticate again. You only need to do this once. If it happens more than once then tell @dtinth.
+	</div>
+	<div id="cadata" class="rldata">
+		Please <span id="reloginlink2" class="rllnk">click here</span> to log out / change account.
+	</div>
+</div>
+
+<div id="wrapper">
+
+	<div class="tweet-display" id="tweet-display"><div class="welcome">
+		<b>thaiWitter</b> [Version {{version}}]
+	</div>
+	<div id="user-about" class="user-about">
+		<div id="user-about-padder" class="user-about-padder">
+			<div id="user-about-wrap" class="user-about-wrap">
+				<div id="user-about-title" class="user-about-title"></div>
+				<div id="user-about-text" class="user-about-text"></div>
+			</div>
+		</div>
+	</div>
+
+</div>
+</div>
+
+<div class="notification-area" id="notification-area">
+</div>
+
+<div class="tweet-bar" id="tweet-bar">
+	<div class="tweet-bar-container">
+		<div class="tweet-bar-popup-anchor" id="tweet-bar-popup-anchor"></div>
+		<textarea id="tweet-data" class="tweet-area" cols="100" rows="2"></textarea>
+	</div>
+</div>
+
+<div class="bottom-buttons" id="buttons-bar"></div>
+
+</div><!-- container of all! -->
+
+<script type="text/javascript">
+APP_NAME='- thaiWitter';
+DEBUG=0;
+{{config}}
+</script>
+<script type="text/javascript">
+{{twitter_config}}
+</script>
+<script src="{{script}}"></script>
+
+</body>
+</html>

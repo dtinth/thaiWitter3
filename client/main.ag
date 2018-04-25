@@ -1,0 +1,18 @@
+[
+	"conf/config.js",
+	"conf/twitter-config.js",
+	"conf/regex.js",
+	"lib/dtjs2.js",
+	"lib/twcs.js",
+	"vendor/underscore-min.js",
+	"vendor/q.min.js",
+	"T/Y.js",
+	"T/T.js",
+	"T/twitter-regex.js",
+	"T/future.js",
+	"T/date.js",
+	"T/text.js",
+	"js/js.js",
+	"js/mixin-media-preview.js",
+	"js/mixin-autocomplete.js"
+]

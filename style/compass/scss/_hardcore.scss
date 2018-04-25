@@ -1,0 +1,57 @@
+.hardcore {
+
+	#status-chars, .tweet-bar {
+		-moz-transition: 0.3s opacity, 0.5s -moz-transform, 0.5s margin-bottom;
+	}
+	.bottom-buttons { -moz-transition: 0.3s opacity; }
+
+	.empty {
+		#status-chars, &.tweet-bar { opacity: 0; pointer-events: none; }
+		#status-chars { -moz-transform: translate(0, -20px); }
+		&.tweet-bar { margin-bottom: -20px; }
+		&.bottom-buttons { opacity: 0; }
+	}
+	.not-empty {
+		#status-chars, &.tweet-bar { opacity: 1; }
+		&.bottom-buttons { opacity: 1; }
+	}
+
+	.tweet-bar {
+		height: 0;
+		border: 0; background: transparent;
+	}
+
+	.tweet-bar-container {
+		position: absolute;
+		width: auto; right: 20px; left: 20px; bottom: 20px;
+		border: 1px solid #454443;
+		background: rgba(9,8,7,0.9);
+		border-radius: 4px;
+		box-shadow: 0 1px 7px #000;
+		padding: 0;
+	}
+
+	.tweet-area {
+		-moz-box-sizing: border-box;
+		height: 50px;
+		padding: 4px 8px;
+	}
+
+	#status-chars {
+		position: absolute;
+		top: 40px; right: 20px;
+		font: bold 30px Helvetica;
+		text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+	}
+
+	#status-scroll { background: #353433; }
+
+	.head { z-index: 100; width: auto; left: auto; right: 0; border: 0; background: transparent; }
+	.head .menu-item:not(#menu-additional) { display: none; }
+	#menu-additional { position: absolute; z-index: 1; top: 0; right: 0; bottom: 0; left: 0; color: transparent; }
+	#menu-additional.menu-item-open, #menu-additional:hover { background: transparent; }
+	.options { margin-top: -25px; }
+
+	.bottom-buttons { bottom: 24px; right: 10px; }
+
+}

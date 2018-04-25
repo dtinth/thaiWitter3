@@ -1,0 +1,406 @@
+
+
+// --mixin: image-preview--
+// preview images in a popup {
+
+class Application {
+
+	registerComponents() {
+		super;
+		this.register('mediaPreviewKeyHandler', new MediaPreviewKeyHandler());
+	}
+
+	getKeyHandlers() {
+		var l = super;
+		l.unshift(this.locate('mediaPreviewKeyHandler'));
+		return l;
+	}
+
+}
+
+class IMediaLoader {
+	onload() { }
+	onerror() { }
+	load() =0;
+}
+
+class MediaLoaderCache implement {
+	@map = {};
+	register(url, loader) {
+		@map[url] = loader;
+	}
+	get(url) {
+		return @map[url];
+	}
+}
+
+class MediaLoaderOEmbed extends IMediaLoader {
+	init(api, url) {
+		@api = api;
+		@url = url;
+	}
+	load() {
+		getRestApi(@api.replace(/:url/, encodeURIComponent(@url)).replace(/:callback/, this::oncomplete.callback()));
+	}
+	oncomplete(data) {
+		if (data.type != 'photo' && !data.thumbnail_url) this.onfail();
+		this.provider = [data.provider_name, data.provider_url];
+		this.url = data.url;
+		if (data.type != 'photo') {
+			this.url = data.thumbnail_url;
+		}
+		if (data.width && data.height) {
+			this.size = [data.width, data.height];
+		} else if (data.thumbnail_width && data.thumbnail_height) {
+			this.size = [data.thumbnail_width, data.thumbnail_height];
+		}
+		if (this.url) this.onload();
+		else this.onerror();
+	}
+}
+
+class MediaLoaderTwitter extends IMediaLoader {
+	provider = ['pic.twitter.com', 'https://pic.twitter.com/'];
+	init(media) {
+		@media = media;
+	}
+	load() {
+		this.url = @media.media_url_https || @media.media_url;
+		var maxSize = 0;
+		if (@media.sizes) for (var k in @media.sizes) {
+			var c = @media.sizes[k];
+			var pixels = c.w * c.h;
+			if (pixels > maxSize) {
+				this.size = [c.w, c.h]; 
+				maxSize = pixels;
+			}
+		}
+		if (this.url) this.onload();
+		else this.onerror();
+	}
+}
+
+class MediaLoaderURL extends IMediaLoader {
+	init(provider, url, sizeHint) {
+		@provider = provider;
+		@url = url;
+		@sizeHint = sizeHint;
+	}
+	load() {
+		this.provider = @provider;
+		this.url = @url;
+		if (@sizeHint) {
+			this.size = @sizeHint;
+		}
+		this.onload();
+	}
+}
+
+class UrlHandler implement {
+
+	handle(url, e) {
+		if (e.shiftKey || e.metaKey) return super;
+		if (PREF('mediaPreview') == '0') return super;
+		var c = MediaPreviewer.getCurrent();
+		if (c && c.getURL() == url) {
+			setTimeout(function() {
+				c.onclick();
+			}, 1);
+			return false;
+		}
+		var loader;
+		if ((loader = this.getMediaLoader(url))) {
+			this.previewMedia(loader, url);
+			return;
+		}
+		return super;
+	}
+
+	getMediaLoader(url) {
+		var media, cached;
+		if ((cached = MediaLoaderCache.get(url))) {
+			return cached;
+		}
+		if ((media = TwitterMedia.get(url))) {
+			return new MediaLoaderTwitter(media);
+		}
+		url = UrlExpander.expand(url);
+		for (var i = 0; i < this.mediaHandlers.length; i ++) {
+			var c = this.mediaHandlers[i];
+			for (var j = 0; j < c.patterns.length; j ++) {
+				if (c.patterns[j].test(url)) {
+					var loader = c.createLoader(url);
+					if (loader) return loader;
+				}
+			}
+		}
+		return false;
+	}
+
+	previewMedia(loader, url) {
+		new MediaPreviewer(loader, url).preview();
+	}
+
+}
+
+class UserInfoView {
+	nameClicked() {
+		if (@data.profile_image_url) {
+			var url = @showProfileLink;
+			var image = @data.profile_image_url.replace(/_normal(\....)/, '_reasonably_small$1');
+			var loader = new MediaLoaderURL(['Twitter', 'http://twitter.com/'], image);
+			new MediaPreviewer(loader, url).preview();
+		}
+	}
+}
+
+class MediaPreviewKeyHandler extends KeyHandler {
+	keyDown(kc, e) {
+		var c = MediaPreviewer.getCurrent();
+		if (kc == 27 && c) {
+			c.hide();
+			return false;
+		}
+	}
+}
+
+class MediaPreviewer implement {
+
+	@current = null;
+	@imageCache = [];
+
+	setCurrent(cur) {
+		@current = cur;
+	}
+
+	putCache(img) {
+		@imageCache.push(img);
+		while (@imageCache.length > 3) @imageCache.shift();
+	}
+
+	getCache(src) {
+		for (var i = @imageCache.length - 1; i >= 0; i --) {
+			if (@imageCache[i].src == src) {
+				return @imageCache[i];
+			}
+		}
+	}
+
+	getCurrent()  @current;
+
+} prototype implement {
+
+	init(loader, url) {
+		@loader = loader;
+		@loader.onload = this::onload;
+		@loader.onerror = this::onerror;
+		@url = url;
+		@element = C('media-preview-container');
+		@element.onclick = this::onclick;
+		@dialog = new TWDialog('Media Preview', this::renderContent, '');
+		@dialog.onhide = this::onhide;
+		@displayed = false;
+	}
+
+	getURL()    @url;
+	getImage()  @image;
+
+	hide() {
+		@dialog.hide();
+	}
+
+	onhide(cont, dc) {
+		this.constructor.setCurrent(null);
+		cont();
+	}
+
+	onclick() {
+		open_link(@url);
+		this.hide();
+	}
+
+	setMessage(message) {
+		@element.innerHTML = '<div class="media-preview-loading"><b>' + message + '</b><br>(click to open in browser)</div>';
+	}
+
+	renderContent(el) {
+		this.setMessage('loading media information..');
+		el.appendChild(@element);
+	}
+
+	onload() {
+		@loader.previewLoaded = true;
+		MediaLoaderCache.register(@url, @loader);
+		this.loadImage();
+	}
+
+	loadImage() {
+		this.setMessage('loading image..');
+		var cache = this.constructor.getCache(@loader.url);
+		if (cache) {
+			@image = cache.image;
+			@image.onload = this::imageLoaded;
+			@image.onerror = this::onerror;
+			@loader.size = cache.size;
+			this.displayImage();
+		} else {
+			@image = new Image();
+			@image.onload = this::imageLoaded;
+			@image.onerror = this::onerror;
+			@image.src = @loader.url;
+			if (@loader.size) {
+				this.displayImage();
+			}
+		}
+	}
+
+	imageLoaded() {
+		@loader.size = [@image.width, @image.height];
+		@image.onload = null;
+		this.displayImage();
+	}
+
+	displayImage() {
+		if (@displayed) return;
+		this.constructor.putCache({ src: @loader.url, image: @image, size: [@loader.size[0], @loader.size[1]] });
+		@displayed = true;
+		@imageWidth = Math.min(window.innerWidth - 96, @loader.size[0]);
+		@imageHeight = Math.min(window.innerHeight - 256, @imageWidth / @loader.size[0] * @loader.size[1]);
+		@imageWidth = @imageHeight / @loader.size[1] * @loader.size[0];
+		@dialog.setWidth(Math.max(@imageWidth, 320) + 4, true, this::dialogAdjusted);
+	}
+
+	dialogAdjusted() {
+		@element.innerHTML = '';
+		@image.style.width = @imageWidth + 'px';
+		@image.style.marginLeft = (@imageWidth / -2) + 'px';
+		@image.style.height = @element.style.height = @imageHeight + 'px';
+		@element.appendChild(@image);
+		if (@loader.provider) {
+			var link = C('link', 'span');
+			var url = @loader.provider[1];
+			link.appendChild(document.createTextNode((@loader.provider[0] + '').toLowerCase()));
+			link.onclick = function() { open_link(url); };
+			@dialog.updateFooter(function(el) {
+				el.appendChild(document.createTextNode('provider : '));
+				el.appendChild(link);
+			});
+		}
+	}
+
+	onerror() {
+		this.setMessage('can\'t load image!');
+		@image.onerror = null;
+	}
+
+	preview() {
+		@dialog.show();
+		if (@loader.previewLoaded) {
+			this.loadImage();
+		} else {
+			@loader.load();
+		}
+		this.constructor.setCurrent(this);
+	}
+
+}
+
+class UrlHandler .mediaHandlers = [
+	{
+		createLoader: function(url) {
+			return new MediaLoaderURL(["upic.me", "http://upic.me/"], url);
+		},
+		patterns: [
+			/^http:\/\/upic\.me\/i\/\w+\/.+$/i,
+		]
+	},
+	{
+		createLoader: function(url) {
+			return new MediaLoaderURL(["MOLOME", "http://molo.me/"], url.replace(/\/p\//, '/photos/pop_big/'), [210, 210]);
+		},
+		patterns: [
+			/^http:\/\/molo\.me\/p\/\w+$/i
+		]
+	},
+	{
+		createLoader: function(url) {
+			var m = url.match(/\/([a-z0-9]+)$/i);
+			if (!m || m[1] == 'search') return false;
+			return new MediaLoaderURL(["Twitpic", "http://twitpic.com/"], 'https://twitpic.com/show/large/' + m[1]);
+		},
+		patterns: [
+			/^http:\/\/twitpic\.com\/[a-z0-9]+$/i,
+			/^http:\/\/www\.twitpic\.com\/[a-z0-9]+$/i,
+			/^http:\/\/twitpic\.com\/photos\/[a-z0-9]+$/i,
+			/^http:\/\/www\.twitpic\.com\/photos\/[a-z0-9]+$/i		
+		]
+	},
+	{
+		createLoader: function(url) {
+			return new MediaLoaderOEmbed("http://api.embed.ly/1/oembed?key=492bc16c09cb11e1858e4040d3dc5c07&url=:url&format=json&callback=:callback", url);
+		},
+		patterns: [
+			/^http:\/\/.*imgur\.com\/.*$/i,
+			/^http:\/\/i.*\.photobucket\.com\/albums\/.*$/i,
+			/^http:\/\/s.*\.photobucket\.com\/albums\/.*$/i,
+			/^http:\/\/media\.photobucket\.com\/image\/.*$/i,
+			/^http:\/\/www\.tinypic\.com\/view\.php.*$/i,
+			/^http:\/\/tinypic\.com\/view\.php.*$/i,
+			/^http:\/\/www\.tinypic\.com\/player\.php.*$/i,
+			/^http:\/\/tinypic\.com\/player\.php.*$/i,
+			/^http:\/\/www\.tinypic\.com\/r\/.*\/.*$/i,
+			/^http:\/\/tinypic\.com\/r\/.*\/.*$/i,
+			/^http:\/\/.*\.tinypic\.com\/.*\.jpg$/i,
+			/^http:\/\/.*\.tinypic\.com\/.*\.png$/i,
+			/^http:\/\/phodroid\.com\/.*\/.*\/.*$/i,
+			/^http:\/\/img\.ly\/.*$/i,
+			/^http:\/\/twitrpix\.com\/.*$/i,
+			/^http:\/\/.*\.twitrpix\.com\/.*$/i,
+			/^http:\/\/picplz\.com\/.*$/i,
+			/^http:\/\/lockerz\.com\/s\/.*$/i,
+			/^http:\/\/share\.ovi\.com\/media\/.*\/.*$/i,
+			/^http:\/\/www\.flickr\.com\/photos\/.*$/i,
+			/^http:\/\/twitgoo\.com\/.*$/i,
+			/^http:\/\/instagram\.com\/p\/.*$/i,
+			/^http:\/\/instagr\.am\/p\/.*$/i,
+			/^http:\/\/twitter\.com\/.*\/status\/.*\/photo\/.*$/i,
+			/^http:\/\/twitter\.com\/.*\/statuses\/.*\/photo$/i,
+			/^http:\/\/pic\.twitter\.com\/.*$/i,
+			/^http:\/\/www\.twitter\.com\/.*\/statuses\/.*\/photo\/.*$/i,
+			/^http:\/\/mobile\.twitter\.com\/.*\/status\/.*\/photo\/.*$/i,
+			/^http:\/\/mobile\.twitter\.com\/.*\/statuses\/.*\/photo\/.*$/i,
+			/^https:\/\/twitter\.com\/.*\/status\/.*\/photo\/.*$/i,
+			/^https:\/\/twitter\.com\/.*\/statuses\/.*\/photo\/.*$/i,
+			/^https:\/\/www\.twitter\.com\/.*\/status\/.*\/photo\/.*$/i,
+			/^https:\/\/www\.twitter\.com\/.*\/statuses\/.*\/photo\/.*$/i,
+			/^https:\/\/mobile\.twitter\.com\/.*\/status\/.*\/photo\/.*$/i,
+			/^https:\/\/mobile\.twitter\.com\/.*\/statuses\/.*\/photo\/.*$/i,
+			/^http:\/\/twitpic\.com\/.*$/i,
+			/^http:\/\/www\.twitpic\.com\/.*$/i,
+			/^http:\/\/twitpic\.com\/photos\/.*$/i,
+			/^http:\/\/www\.twitpic\.com\/photos\/.*$/i		
+		]
+	},
+	{
+		createLoader: function(url) {
+			return new MediaLoaderOEmbed("http://upic.me/api/oembed?url=:url&format=json&callback=:callback", url);
+		},
+		patterns: [
+			/^http:\/\/upic\.me\/\w+/i,
+			/^http:\/\/upic\.me\/show\/\d+$/i
+		]
+	}
+];
+
+class OptionsUI.options.push(
+	{
+		title: 'Media Preview',
+		description: 'Display media previews inside application.',
+		key: 'mediaPreview',
+		options: OptionsUI.ON_OFF,
+		renderTo: 'tdmoar'
+	}
+);
+// }
+
+

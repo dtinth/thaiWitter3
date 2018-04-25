@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cp public/components/q/q.min.js client/vendor/q.min.js
+cp public/components/eventEmitter/EventEmitter.min.js client/vendor/EventEmitter.min.js
+cp public/components/underscore/underscore-min.js client/vendor/underscore-min.js

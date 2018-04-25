@@ -1,0 +1,6 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><meta http-equiv="Content-Type" content="text/html;charset=utf-8"><title>?!?</title>
+<style>body { background: #353433; color: #fcc; margin: 0; padding: 30px; font: bold 32pt Georgia, Times, sans-serif; text-align: center; }
+p { text-shadow: 0 -3px 0.4px rgba(9,8,7,0.8); margin: 2em 0 1em; word-spacing: 0.3ex; }
+div { font: 12px Verdana, sans-serif; color: #8b8685; }</style>
+<body><p>{{ text }}</p><div>~ SRSLY, thaiWitter ~</div>

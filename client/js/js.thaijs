@@ -1,0 +1,6615 @@
+/*
+ * thaiWitter: Thai's Twitter Client
+ * http://tw.dt.in.th/
+ *
+ * (c) Thai Pangsakulyanont. All rights reserved.
+ */
+
+
+// --function--
+// function prototypes {
+
+(function() {
+	var id = 0;
+	Function.prototype.callback = function() {
+		var callbackId = 'tWCallback' + (++id);
+		var that = this;
+		window[callbackId] = function() {
+			that.apply(this, arguments);
+			delete window[callbackId];
+		};
+		return callbackId;
+	};
+})();
+
+// }
+
+// --bootstrap--
+// steps of bootstrapping the application {
+
+var ATSIGN_REGEX = "([@\uff20])";
+var MENTIONS_REGEX = "(^|[^a-zA-Z0-9_])([@\uff20])([a-zA-Z0-9_]{1,20})";
+var AM_I_IOS = ~navigator.userAgent.indexOf('AppleWebKit/') && ~navigator.userAgent.indexOf('Mobile/') && ~navigator.userAgent.indexOf('Safari/');
+var rootElement = $('container-of-all');
+
+// hide loading
+$('ltmc').style.display = 'none';
+
+// install or reload
+if (window.webrunner) {
+	window.platform = window.webrunner;
+}
+$('install-tw').style.display = 'none';
+
+// url parameters
+var xtra_timeline = '',
+	xtra_keyword = '',
+	xtra_params = '',
+	xtra_secure = location.protocol == 'https:' ? '&https=YAH' : '';
+
+// get token for csrf
+var API_GET  = TWCONFIG.api.get;
+var API_POST = TWCONFIG.api.post;
+var MY_DAMN_NAME = ''; // this one will be set after feed loading, and once set, will become a constant
+var THE_TOKEN = function() {
+	var xht = new XMLHttpRequest();
+	xht.open ('GET', TWCONFIG.api.token, false);
+	xht.send ('');
+	return xht.responseText.match(/#S#(.*)#E#/)[1];
+}();
+
+// in-browser debugging
+if (DEBUG) {
+	if (!window.platform)
+		window.platform = {openURI: function(x){
+			window.open (x, '_blank');}};
+}
+
+// }
+
+
+
+// --application--
+// the main application!
+
+var app;
+
+class Application {
+
+	init() {
+		@components = {};
+	}
+
+	run() {
+		this.registerConfiguration();
+		this.registerComponents();
+		this.launchApplication();
+	}
+
+	register(name, component) {
+		@components[name] = component;
+		return component;
+	}
+
+	locate(name)  @components[name];
+
+	setActiveTimeline(timelineObject) {
+		this.register('timeline', timelineObject);
+	}
+
+	registerConfiguration() {
+		this.register('config', TWCONFIG);
+	}
+
+	registerComponents() {
+		this.register('appState',     new StateSwitcher(document.documentElement));
+		this.register('tweetState',   new BatchStateSwitcher(this.getTweetStateSwitchers()));
+		this.register('geolocationButton', new BottomButton('btn-geolocation'))
+		this.register('buttonsBar',   new TWButtonsBar());
+		this.register('geo',          new TWGeo(this.locate('geolocationButton')));
+		this.register('notifier',     new Notifier());
+		this.register('mainTimeline', new Timeline());               // main timeline
+		this.register('timeline',     this.locate('mainTimeline'));  // active timeline
+		this.register('globalKeyHandler', new GlobalKeyHandler());
+		this.register('zzzKeyHandler',    new ZzzKeyHandler());
+		this.register('tweetBox',     new TweetBox());
+		this.register('events',       new EventHandler());
+		this.register('commands',     new GlobalCommands());
+		this.register('highlighter',  new StatusHighlighter());
+		this.register('filter',       new StatusFilter());
+		this.register('infoToggler',  new InfoToggler());
+		this.register('options',      new OptionsUI());
+		this.register('tabsToggler',  new TabsToggler());
+		this.register('userInfoView', new UserInfoView());
+	}
+	
+	getTweetStateSwitchers() [
+		new StateSwitcher($('tweet-bar')),
+		new StateSwitcher($('head')),
+		new StateSwitcher($('buttons-bar'))
+	];
+
+	getBottomButtons() [
+		this.locate('geolocationButton')
+	];
+
+	getKeyHandlers() [
+		this.locate('globalKeyHandler'),
+		this.locate('zzzKeyHandler'),
+		this.locate('tweetBox').keyHandler,
+		this::getCurrentTimelineKeyHandler
+	];
+
+	getCurrentTimelineKeyHandler()  this.locate('timeline').keyHandler;
+
+	launchApplication() {
+		this.locate('appState').update();
+		handleKeywords ();
+		this.locate('events').globalResize();
+		if (!DEBUG) {
+			this.locate('timeline').cmd.reload ();
+		} else {
+			optsNew.show ();
+		}
+		this.locate('buttonsBar').setButtons(this.getBottomButtons());
+		this.locate('events').setKeyHandlers(this.getKeyHandlers());
+		this.locate('options').loadOptions();
+		this.locate('tabsToggler').setupComponent();
+		sysNotify ('Welcome', 'Welcome to thaiWitter.');
+		notify ('<b>Welcome!</b>');
+	}
+
+}
+
+window.addEventListener('load', function() {
+
+	app = new Application();
+	app.run();
+
+}, false);
+
+// }
+
+
+
+
+class StateSwitcher {
+
+	init(element) {
+		@states = {};
+		@element = element;
+		@defaultState = @element.className + ' ';
+	}
+
+	set(name, update) {
+		@states[name] = true;
+		if (update) this.update();
+	}
+
+	unset(name, update) {
+		delete @states[name];
+		if (update) this.update();
+	}
+
+	setSwitch(name, truth, update) {
+		this.set((truth ? '' : 'not-') + name);
+		this.unset((truth ? 'not-' : '') + name, update);
+	}
+
+	update() {
+		var data = '';
+		for (var i in @states) data += ' ' + i;
+		@element.className = @defaultState + data;
+	}
+
+}
+
+class BatchStateSwitcher {
+
+	init(list) {
+		@list = list;
+	}
+	set(name, update)              { for (var i = 0; i < @list.length; i ++) @list[i].set(name, update); }
+	unset(name, update)            { for (var i = 0; i < @list.length; i ++) @list[i].unset(name, update); }
+	setSwitch(name, truth, update) { for (var i = 0; i < @list.length; i ++) @list[i].setSwitch(name, truth, update); }
+	update()                       { for (var i = 0; i < @list.length; i ++) @list[i].update(); }
+
+}
+
+// --utilities--
+// utility functions {
+
+function implementable(name) {
+	return function(obj) {
+		if (!this.hasOwnProperty(name)) {
+			if (this[name]) {
+				var c = function(){};
+				c.prototype = this[name];
+				this[name] = c;
+			} else {
+				this[name] = {};
+			}
+		}
+		this.implement.call(this[name], obj);
+	};
+}
+function dataAttr(n, v) {
+	return 'data-tw-' + n + '="' + escape(v) + '"';
+}
+function openPopup(url, targ, features, windowIsOpen) {
+	windowIsOpen = windowIsOpen || (function() {});
+	var nw = window.open(url, targ, features);
+	if (nw) windowIsOpen(nw);
+	else notify ('<span data-tw-popup="1" style="-moz-appearance:button;color:buttontext;display:inline-block;padding:3px 5px" onclick="' + function() {
+		nw = window.open(url, targ, features);
+		if (nw) windowIsOpen(nw);
+		else notify('Configure your popup blocker!');
+	}.callback() + '();">Click here to open popup...</span>');
+}
+function pwns(i) {
+	openPopup(i, '_blank', 'width=' + window.innerWidth + ',height=' + window.innerHeight + ',left=' + (24 + window.screenX) + ',top=' + (24 + window.screenY));
+}
+function C(c, t) {
+	var tag = document.createElement(t === undefined ? 'div' : t);
+	tag.className = c;
+	return tag;
+}
+function open_link(x) {
+	if (window.platform) {
+		window.platform.openURI (x);
+	} else {
+		window.open (x, '_blank');
+	}
+}
+function getRestApi(url) {
+	var s = document.createElement('script');
+	s.type = 'text/javascript';
+	s.src = url;
+	document.body.appendChild (s);
+}
+function sysNotify(title, text, overridden, picture) {
+	if (window.console) console.log(title + ' : ' + text + (picture ? ' -> ' + picture : ''));
+	if (PREF('sysNotifyMode') != '0' || overridden) {
+		if (window.thaiWitterClientNotify && PREF('notificationEngine') == 'gntp') {
+			window.thaiWitterClientNotify(title, text, picture);
+		} else if (window.platform && window.platform.showNotification) {
+			if (!picture) picture = '';
+			window.platform.showNotification (title, text, picture);
+		} else if (window.webkitNotifications) {
+			if (!picture) picture = 'icns.png';
+			var noti = window.webkitNotifications.createNotification(picture, title, text);
+			noti.show();
+		}
+	}
+}
+
+// }
+
+class UrlHandler implement {
+	
+	handle(url, e) {
+		open_link(url);
+	}
+
+}
+
+class XH {
+	init(method, url, progress) {
+		@xhr = this.createXHR();
+		@xhr.open(method, url, true);
+		@xhr.onreadystatechange = this::onreadystatechange;
+		@aborted = false;
+		this.setProgress(progress);
+	}
+	createXHR() {
+		return new XMLHttpRequest();
+	}
+	setProgress(progress) {
+		@progress = progress;
+	}
+	send(what) {
+		if (what == null) what = null;
+		@xhr.send(what);
+	}
+	sendForm(what) {
+		@xhr.setRequestHeader('content-type', 'application/x-www-form-urlencoded');
+		this.send(what);
+	}
+	abort() {
+		if (@aborted) return;
+		@aborted = true;
+		@xhr.abort();
+		if (@progress) @progress.fail('Aborted!');
+	}
+	onreadystatechange() {
+		if (@xhr.readyState == 4) {
+			this::handleXHRResponse();
+		}
+	}
+	getResponseHeader(header)  @xhr.getResponseHeader(header);
+	setRequestHeader(a, b)     @xhr.setRequestHeader(a, b);
+	handleXHRResponse() {
+		if (@aborted) return;
+		if (@xhr.responseText.substr(0, 5) == 'echo:') {
+			if (@progress) @progress.intermediate();
+			thaiWitterClientEcho(@xhr.responseText, this::handleEchoResponse);
+		} else {
+			this.oncomplete(@xhr.responseText, @xhr.status);
+		}
+	}
+	handleEchoResponse(response) {
+		if (@aborted) return;
+		this.oncomplete(response, 200);
+	}
+}
+
+// --elements--
+// commonly-used elements {
+
+var el = {};
+el.tweetData = $('tweet-data');
+el.tweetBar = $('tweet-bar');
+el.display = $('tweet-display');
+el.head = $('head');
+el.notify = $('notification-area');
+el.status = {};
+el.status.scroll = $('status-scroll');
+el.status.chars = $('status-chars');
+
+// }
+
+// --prefs--
+// preferences engines
+// defines how preferences are loaded and saved {
+
+class PrefEngine implement {
+
+	engineMap = {};
+	engines   = [];
+
+	register(engines) {
+		this.implement.call(this.engineMap, engines);
+		return this;
+	}
+
+	getPreference(key) {
+		for (var i = 0; i < this.engines.length; i ++) {
+			var value = this.engineMap[this.engines[i]].getPreference(key);
+			if (value !== null) {
+				return value;
+			}
+		}
+		return null;
+	}
+
+	setPreference(key, newValue) {
+		for (var i = 0; i < this.engines.length; i ++) {
+			this.engineMap[this.engines[i]].setPreference (key, newValue);
+		}
+	}
+
+} register {
+
+	localStorage: {
+		getPreference: function(key) {
+			try {
+				var value = localStorage.getItem(key);
+				if (value === '' || value === undefined || value === null)
+					return null;
+				return value;
+			} catch (e) {
+				return null;
+			}
+		},
+		setPreference: function(key, newValue) {
+			try {
+				localStorage.setItem(key, newValue);
+			} catch (e) {}
+		}
+	};
+
+	globalStorage: {
+		getPreference: function(key) {
+			try {
+				var value = globalStorage[location.hostname][key];
+				if (value === '' || value === undefined || value === null)
+					return null;
+				return value;
+			} catch (e) {
+				return null;
+			}
+		},
+		setPreference: function(key, newValue) {
+			try {
+				globalStorage[location.hostname][key] = newValue;
+			} catch (e) {}
+		}
+	};
+
+}.engines.push('localStorage', 'globalStorage');
+
+class PrefMan implement {
+
+	defaults: {
+		sysNotifyMode:         '0',
+		refreshRate:           '60',
+		refreshOnTweet:        '0',
+		autoScrollOnRefresh:   '0',
+		ifirp:                 '1',
+		ifclient:              '0',
+		ifiosthai:             '1',
+		hlKeywords:            '',
+		ftKeywords:            '',
+		awesomeThings:         '1',
+		moarAwesomeThings:     '1',
+		evenMoarAwesomeThings: '0',
+		useRetweetAPI:         '1',
+		customCSS:             '/* Custom CSS */\n',
+		clientEcho:            '1',
+		clientStream:          '0',
+		urlShortener:          'http://api.bit.ly/shorten?version=2.0.1&login=thaiwitter&apiKey=R_ba9d1fd1a7882b1ab214432d02b88cc7&',
+		hardcoreMode:          '0',
+		imageUploader:         'twitter',
+		facebookTweet:         '0',
+		mediaPreview:          '1',
+		usernameAutoComplete:  '0',
+		notificationEngine:    'builtin',
+		notificationPicture:   '1',
+		skipTCo:               '0',
+		tweetTemplate:         ''
+	};
+	
+	getPref(key) {
+		var value = PrefEngine.getPreference(key);
+		if (value === null || '' + value === '')
+			return this.defaults[key];
+		return value;
+	}
+
+	setPref(key, newValue) {
+		PrefEngine.setPreference (key, newValue);
+	}
+	
+	debug() {
+		var c = [];
+		for (var i in this.defaults) {
+			c.push (i + ': ' + (this.getPref(i)));
+		}
+		alert (c.join('\n'));
+	}
+
+}
+
+var PREF = function(command) {
+	command = command + '';
+	var index = command.indexOf('=');
+	if (index > -1) {
+		var key = command.substr(0, index);
+		var value = command.substr(1 + index);
+		PrefMan.setPref(key, value);
+	} else {
+		return PrefMan.getPref(command);
+	}
+};
+
+// }
+
+// --progress--
+// stylish progress bars {
+var Progress = function() {
+	var cstyle = 0;
+	var styles = [];
+	function PlainProgress(x) {
+		notify (x);
+	}
+	PlainProgress.prototype.ok = function(x, bg) {
+		notify (x);
+	};
+	PlainProgress.prototype.fail = function(x) {
+		notify (x);
+	};
+	PlainProgress.prototype.intermediate = function() {
+	};
+	function AwesomenessProgress(x, manual) {
+		var d = C('');
+		var e = C('');
+		var that = this;
+		d.setAttribute ('style', 'width: 180px; padding: 1px; border: 1px solid #ccc; background: #111; margin-top: 10px; margin-left: auto;');
+		e.setAttribute ('style', 'width: 20px; height: 17px; background: #919499; white-space: nowrap; font: 9pt Verdana; color: rgba(255, 255, 255, 0.7); line-height: 15px; overflow: hidden; text-indent: 7px;');
+		var bg = dtjs2.c.a('#919499');
+		d.appendChild (e);
+		e.innerHTML = x;
+		dtjs2.a.c (0, 1, 0.15, function(v) {
+			d.style.opacity = v;
+		});
+		var f;
+		if (manual) {
+			f = dtjs2.a.c(0, 10, 3, function(v, fin) {
+				e.style.width = v + '%';
+			});
+		} else {
+			f = dtjs2.a.c(0, 40, 3, function(v, fin) {
+				e.style.width = v + '%';
+				if (fin) {
+					f = dtjs2.a.c(40, 90, 20, function(v) {
+						e.style.width = v + '%';
+					}, dtjs2.ease.o);
+				}
+			});
+		}
+		function vq() {
+			dtjs2.a.c(1, 0, 0.5, function(v, fin) {
+				if (fin) {
+					d.parentNode && d.parentNode.removeChild(d);
+				}
+				d.style.opacity = v;
+				d.style.marginBottom = (v - 1) * 28 + 'px';
+			});
+		}
+		function done(settext, nbg) {
+			f ();
+			f = dtjs2.a.c(f.getValue(), 100, 0.14, function(v) {
+				e.style.width = v + '%';
+			});
+			dtjs2.a.c(0, 1, 0.14, function(v) {
+				e.style.background = dtjs2.c.c(dtjs2.c.f(bg, nbg, v));
+			});
+			e.innerHTML = settext;
+			setTimeout (vq, 3000);
+			delete that.oncancel;
+		}
+		function intermediate(percentage) {
+			f ();
+			var fv = f.getValue() + (100 - f.getValue()) / 3;
+			if (manual) {
+				fv = percentage * 0.9 + 10;
+			}
+			f = dtjs2.a.c(f.getValue(), fv, 0.34, function(v, fin) {
+				e.style.width = v + '%';
+				if (fin && !manual) {
+					f = dtjs2.a.c(f.getValue(), Math.max(f.getValue(), 90), 18, function(v) {
+						e.style.width = v + '%';
+					}, dtjs2.ease.o);
+				}
+			}, dtjs2.ease.o);
+		}
+		e.ondblclick = function() {
+			if (that.oncancel) {
+				that.oncancel();
+			}
+		};
+		this.done = done;
+		this.intermediate = intermediate;
+		el.notify.appendChild (d);
+	}
+	AwesomenessProgress.prototype.ok = function(x, bg) {
+		this.done (x, bg || [50, 200, 50]);
+	};
+	AwesomenessProgress.prototype.fail = function(x) {
+		this.done (x, [220, 80, 80]);
+	};
+	styles.push (PlainProgress, AwesomenessProgress);
+	function progress(x, y) {
+		return new styles[cstyle % styles.length](x, y);
+	}
+	progress.vhsifnweihdunsdfux = function() {
+		cstyle ++;
+		PREF('moarAwesomeThings=' + cstyle + '');
+		var p = progress('\' \'/');
+		setTimeout (function() { p.fail('\' \'/!!'); }, 500);
+	};
+	var prefStyleID = PREF('moarAwesomeThings');
+	if (prefStyleID === '') prefStyleID = 0;
+	cstyle = parseInt(prefStyleID, 10) % styles.length;
+	return progress;
+}();
+// }
+
+// --notify--
+// in-app notifications {
+var notify = function() {
+	var cstyle = 0;
+	var styles = [
+		function(x) {
+			var c = notifyEl(x);
+			setTimeout (function() {
+				dtjs2.a.c (0, 1, 1, function(v, fin) {
+					if (fin) {
+						c.parentNode && c.parentNode.removeChild(c);
+					}
+					c.style.marginBottom = (0 - v * (c.offsetHeight + 10)) + 'px';
+					c.style.left = (v * (c.offsetWidth + 20)) + 'px';
+				}, dtjs2.ease.i);
+			}, 3000);
+			(function() {
+				dtjs2.a.c (0, 1, 1, function(v) {
+					c.style.left = (-window.innerWidth * (1 - v)) + 'px';
+				}, dtjs2.ease.o);
+			})();
+		},
+		function(x) {
+			var c = notifyEl(x);
+			c.style.WebkitTransform = 'translateZ(0)';
+			setTimeout (function() {
+				dtjs2.a.c (0, 1, 0.3, function(v, fin) {
+					if (1 - v > 0) {
+						c.style.MozTransform = 'scale(' + (1 - v) + ')';
+						c.style.WebkitTransform = 'scale(' + (1 - v) + ') translateZ(0)';
+					}
+					if (fin) {
+						c.style.visibility = 'hidden';
+						c.style.MozTransform = '';
+						c.style.WebkitTransform = 'translateZ(0)';
+						dtjs2.a.c (0, 1, 0.2, function(v, fin) {
+							if (fin) {
+								c.parentNode && c.parentNode.removeChild(c);
+							}
+							c.style.marginBottom = (0 - v * (c.offsetHeight + 10)) + 'px';
+						}, dtjs2.ease.i);
+					}
+				}, dtjs2.ease.i);
+			}, 3000);
+			(function() {
+				c.style.left = '0px';
+				dtjs2.a.c (0, 1, 0.1, function(v) {
+					c.style.MozTransform = 'translate(0,' + ((1 - v) * 20) + 'px)';
+					c.style.WebkitTransform = 'translate3d(0,' + ((1 - v) * 20) + 'px,0)';
+					c.style.opacity = v;
+				});
+			})();
+		},
+		function(x) {
+			SplashNoti.show (x);
+		},
+		function() {
+			var regs = {};
+			function nnt(x) {
+				var c = C('nnoti');
+				c.innerHTML = x;
+				var p = window.innerWidth;
+				c.style.position = 'fixed';
+				c.style.whiteSpace = 'nowrap';
+				var t = 40;
+				var row = 0;
+				for (var i = 0; regs[i] !== undefined; i ++) {
+					if (regs[i]() < window.innerWidth - 10) break;
+				}
+				row = i;
+				t += row * 25;
+				c.style.top = t + 'px';
+				c.style.left = window.innerWidth + 'px';
+				c.style.zIndex = '40';
+				c.style.fontSize = '14pt';
+				c.style.fontWeight = 'bold';
+				c.style.color = 'white';
+				var st = new Date().getTime();
+				var lr = window.innerWidth + 10;
+				function glr() {
+					return lr;
+				}
+				function fr() {
+					var ct = new Date().getTime();
+					var l = p + (st - ct) / 5;
+					c.style.left = l + 'px';
+					lr = l + c.offsetWidth;
+					if (lr < 0) {
+						c.parentNode && c.parentNode.removeChild(c);
+						return false;
+					}
+					return true;
+				}
+				dtjs2.a.m.add (fr);
+				regs[row] = (glr);
+				rootElement.appendChild (c);
+			}
+			return nnt;
+		}()
+	];	
+	function notifyEl(x) {
+		var c = C('notification');
+		c.innerHTML = x;
+		c.style.left = (-window.innerWidth * 1) + 'px';
+		el.notify.appendChild (c);
+		return c;
+	}
+	function notify(x) {
+		styles[cstyle % styles.length] (x);
+	}
+	notify.vhsifnweihdunsdfux = function() {
+		cstyle ++;
+		PREF('awesomeThings=' + cstyle + '');
+		notify ('\' \'/');
+	};
+	cstyle = parseInt(PREF('awesomeThings'), 10) % styles.length;
+	return notify;
+}();
+// }
+
+class ValueAnimator {
+	init(start, duration, easing) {
+		@current = @target = start;
+		@duration = duration || 0.34;
+		@easing = easing || dtjs2.ease.io;
+	}
+	getCurrent()  @current;
+	get()         @target;
+	getTarget()   @target;
+	set(target, animate, callback) {
+		if (@animation) {
+			@animation();
+			delete @animation;
+		}
+		if (@callback) {
+			@callback();
+			delete @callback;
+		}
+		@target = target;
+		if (animate) {
+			@callback = callback;
+			@widthAnimation = dtjs2.a.c(@current, @target, @duration, this::setFrame, @easing);
+		} else {
+			@current = @target;
+			this.onupdate();
+			if (callback) callback();
+		}
+	}
+	setFrame(v, f) {
+		@current = v;
+		this.frame();
+		if (f && @callback) {
+			@callback();
+			delete @callback;
+		}
+	}
+	bindTo(obj, name) {
+		obj['get' + name] = this::get;
+		obj['set' + name] = this::set;
+		return this;
+	}
+	frame() =0;
+}
+
+// --twdialog--
+// dialog {
+
+class TWDialog {
+
+	init(title, content, footer) {
+		@title = title;
+		@content = content;
+		@footer = footer;
+		@widthAnimator = new ValueAnimator(360).bindTo(this, 'Width');
+		@widthAnimator.frame = this::updateWidth;
+		@topAnimator = new ValueAnimator(60).bindTo(this, 'Top');
+		@topAnimator.frame = this::updateTop;
+	}
+	render() {
+		@element = C('tw-dialog');
+		@titleElement = C('tw-dialog-title');
+		@titleText = C('tw-dialog-title-text', 'span');
+		@closeButton = C('link', 'span');
+		@element.appendChild(@titleElement);
+		@titleElement.appendChild(@titleText);
+		@titleElement.appendChild(@closeButton);
+		@closeButton.innerHTML = ' (x)';
+		@closeButton.onclick = this::hide;
+		@titleText.innerHTML = @title;
+		@contentElement = C('tw-dialog-content');
+		@footerElement = C('tw-dialog-footer');
+		@element.appendChild(@contentElement);
+		@element.appendChild(@footerElement);
+		this.updateWidth();
+		this.updateTop();
+		this.renderContent();
+		this.renderFooter();
+	}
+
+	updateWidth() {
+		if (@element) {
+			@element.style.width = @widthAnimator.getCurrent() + 'px';
+			@element.style.marginLeft = ((@widthAnimator.getCurrent() + 2) / -2) + 'px';
+		}
+	}
+	updateTop() {
+		if (@element) {
+			@element.style.top = @topAnimator.getCurrent() + 'px';
+		}
+	}
+
+	setWidthFrame(v, f) {
+		@currentWidth = v;
+		this.updateWidth();
+	}
+
+	getContentElement()  @contentElement;
+	getFooterElement()   @footerElement;
+
+	renderPart(element, data) {
+		if (typeof data == 'function') {
+			data(element);
+		} else {
+			element.innerHTML = data;
+		}
+	}
+	renderContent() { this.renderPart(@contentElement, @content); }
+	renderFooter() { this.renderPart(@footerElement, @footer); }
+	updateContent(newContent) { @content = newContent; this.renderContent(); }
+	updateFooter(newFooter) { @footer = newFooter; this.renderFooter(); }
+
+	hide() {
+		if (!@element || !@element.parentNode) { return; }
+		this.onhide(this::doHide, this::disableClick);
+	}
+
+	disableClick() {
+		@element.style.pointerEvents = 'none';
+	}
+
+	doHide() {
+		this.disableClick();
+		dtjs2.a.c(0, 1, 0.4, function(v, finish) {
+			var e = -64 - this.getTop() - @element.offsetHeight;
+			@element.style.marginTop = (e * v) + 'px';
+			if (finish) {
+				if (@element.parentNode) @element.parentNode.removeChild(@element);
+				@element.style.marginTop = '0';
+			}
+		}.b(this), dtjs2.ease.sine.io);
+	}
+
+	show() {
+		if (this.constructor.lastDialog) {
+			this.constructor.lastDialog.hide();
+		}
+		this.constructor.lastDialog = this;
+		this.onshow();
+		if (!@element) {
+			this.render();
+		}
+		@element.style.display = 'block';
+		@element.style.pointerEvents = 'auto';
+		rootElement.appendChild(@element);
+	}
+
+	onshow() {
+	}
+
+	onhide(cont, disableClicking) {
+		cont();
+	}
+
+}
+// }
+
+// --buttons-bar--
+// the bottom buttons bar {
+
+class TWButtonsBar {
+
+	init() {
+		@element = $('buttons-bar');
+	}
+
+	setButtons(buttons) {
+		@buttons = buttons;
+		for (var i = 0; i < buttons.length; i ++) {
+			buttons[i].renderTo(@element);
+		}
+	}
+
+	setOffset(offset) {
+		@element.style.marginRight = (-offset) + 'px';
+		@element.style.marginLeft  =   offset + 'px';
+	}
+
+}
+
+class BottomButton {
+
+	init(className) {
+		@className = className;
+		@states = {};
+		@visible = false;
+		@dim = false;
+		@flashing = false;
+		@element = C(this.getClass());
+		@element.onclick = this::onclick;
+	}
+
+	onclick() { }
+
+	isVisible() @visible;
+	show() { @visible = true; }
+	hide() { @visible = false; }
+	isDimmed() @dim;
+	dim() { @dim = true; }
+	undim() { @dim = false; }
+
+	setState(x, y) { @states[x] = y; }
+	unsetState(x)  { delete @states[x]; }
+	updateState()  { @element.className = this.getClass(); }
+
+	startFlashing() {
+		if (!@flashing) {
+			@flashing = true;
+			this.startFlashingAnimation();
+		}
+	}
+	startFlashingAnimation() {
+		if (@flashingAnimation) @flashingAnimation();
+		@flashingAnimation = dtjs2.a.c(0.7, 0.2, 0.75, this::flashingAnimationFrame, dtjs2.ease.o);
+	}
+	flashingAnimationFrame(v, f) {
+		@element.style.opacity = v;
+		if (f && @flashing) {
+			setTimeout(this::startFlashingAnimation, 0);
+		}
+	}
+	stopFlashing() {
+		if (@flashing) {
+			@flashing = false;
+			if (@flashingAnimation) @flashingAnimation();
+			@element.style.opacity = null;
+		}
+	}
+	isFlashing()  @flashing;
+
+	getClass() {
+		var c = 'bottom-button ' + @className;
+		c += ' ' + (@visible ? 'btn-visible' : 'btn-invisible');
+		c += ' ' + (@dim ? 'btn-dimmed' : 'btn-undimmed');
+		for (var i in @states) c += ' ' + @states[i];
+		return c;
+	}
+
+	renderTo(element) {
+		element.appendChild(@element);
+	}
+
+}
+
+// }
+
+// --tweet-bar-popup--
+// a popup from tweet bar {
+
+class TweetBarPopup {
+	init(position) {
+		@element = C('tweet-bar-popup tweet-bar-popup-' + position);
+		@content = C('tweet-bar-popup-contents');
+		@element.style.height = '0px';
+		@element.appendChild(@content);
+		@currentHeight = 0;
+		@showing = false;
+		$('tweet-bar-popup-anchor').appendChild(@element);
+	}
+	show() {
+		@showing = true;
+		this.updateHeight();
+	}
+	hide() {
+		@showing = false;
+		this.updateHeight();
+	}
+	updateHeight() {
+		var targetHeight = @showing ? @content.offsetHeight : 0;
+		if (@animation) @animation();
+		@animation = dtjs2.a.c(@currentHeight, targetHeight, 0.25, this::updateHeightFrame, dtjs2.ease.o);
+	}
+	updateHeightFrame(v, f) {
+		@currentHeight = v;
+		@element.style.height = v + 'px';
+	}
+	getContentElement()  @content;
+}
+
+// }
+
+// --geo--
+// geolocation support {
+
+var addressID = 0;
+function showMap(lat, lng, ss) {
+	var sensor = ss ? 'true' : 'false';
+	var url = 'http://maps.google.com/maps/api/staticmap?' + [
+		'center=' + encodeURIComponent(lat + ',' + lng),
+		'size=358x200',
+		'markers=' + encodeURIComponent('color:gray|' + lat + ',' + lng),
+		'sensor=' + sensor
+	].join('&');
+	var id = ++addressID;
+	var dialog = new TWDialog('Location', '<img class="link" onclick="open_link(unescape(\'' + escape('https://maps.google.com/?ll=' + lat + ',' + lng) + '\'))" src="' + url + '" alt="' + lat + ',' + lng + '">', lat + ', ' + lng);
+	dialog.onhide = function(cont, dc) {
+		var img = dialog.getContentElement().getElementsByTagName('img');
+		if (!img) cont();
+		img = img[0];
+		if (!img) cont();
+		dc();
+		dtjs2.a.c(1, 0, 0.2, function(v, finish) {
+			img.style.opacity = v;
+			if (finish) cont();
+		}, dtjs2.ease.io);
+	};
+	dialog.show();
+	var xh = new XH('GET', #config.api.geo + '?lat=' + lat + '&lng=' + lng + '&sensor=' + sensor);
+	xh.oncomplete = function(response) {
+		dialog.updateFooter(response);
+	};
+	xh.send();
+}
+
+class TWGeo {
+
+	@enabled = false;
+	
+	@lat = 0;
+	@lng = 0;
+	@success = false;
+
+	init(button) {
+		@button = button;
+		@button.onclick = this::onclick;
+	}
+
+	on() {
+		if (@enabled) return;
+		@enabled = true;
+		@element = $('geo-status');
+		@element.style.cursor = 'pointer';
+		@element.innerHTML = ' (Loading)';
+		@element.onclick = this::onclick;
+		@button.show(); @button.dim(); @button.updateState();
+		try {
+			@watchID = navigator.geolocation.watchPosition(this::onsuccess, this::onfail,
+				{
+					enableHighAccuracy: true,
+					maximumAge: 60000,
+					timeout: 15000
+				}
+			);
+		} catch (e) {
+			this.onfail();
+		}
+	}
+	
+	onsuccess(position) {
+		@lat = position.coords.latitude;
+		@lng = position.coords.longitude;
+		if (@enabled) @element.innerHTML = ' (Found)';
+		@button.undim(); @button.updateState();
+		@success = true;
+	}
+	
+	onclick() {
+		if (!@success) {
+			notify ('Address not found.');
+		} else {
+			showMap (@lat, @lng, true);
+		}
+	}
+	
+	onfail(x) {
+		if (!@success) {
+			if (@enabled)
+				@element.innerHTML = ' (Failed)';
+			@button.dim(); @button.updateState();
+		}
+	}
+
+	off() {
+		if (@enabled) {
+			@element.innerHTML = '';
+		}
+		navigator.geolocation.clearWatch(@watchID);
+		@button.hide(); @button.updateState();
+		if (!@enabled) return;
+		@enabled = false;
+	}
+
+	getCoordinates() {
+		if (@enabled && @success) return [@lat, @lng];
+		return null;
+	}
+
+	getParam() {
+		if (@enabled && @success) return '&lat=' + @lat + '&lng=' + @lng;
+		return '';
+	}
+
+}
+
+// }
+
+// --urlshortener--
+
+class UrlShortener {
+
+	urlRegex = /(https?:\/\/|www\.)(\S*\w+)+\/?/g;
+
+	init() {
+		@params = [];
+	}
+
+	addUrl(url) {
+		if (url.match(/^http:\/\/bit\.ly/)) {
+			return;
+		}
+		@params.push('longUrl=' + encodeURIComponent(url));
+	}
+
+	getShortener() {
+		return PREF('urlShortener');
+	}
+
+	queryApi() {
+		@pg = new Progress('Shortening URLs....');
+		getRestApi(this.getShortener() + @params.join('&') + '&callback=' + this::gotResult.callback());
+	}
+
+	gotResult(o) {
+		var text = #tweetBox.getText();
+		#tweetBox.setText(text.replace(this.urlRegex, function(url) {
+			if (o && o.results && o.results[url]) {
+				return o.results[url].shortUrl;
+			}
+			return url;
+		}));
+		@pg.ok('Shortened');
+	}
+
+	shortenTweetBox() {
+		var text = #tweetBox.getText();
+		text.replace(this.urlRegex, this::addUrl);
+		if (@params.length > 0) {
+			this.queryApi();
+		} else {
+			notify ('No URLs to shorten.');
+		}
+	}
+
+}
+
+// }
+
+
+
+// --capabilities--
+// client capabilities {
+var Capabilities = {
+	canEcho: function() {
+		return !!window.thaiWitterClientEcho;
+	},
+	echo: function() {
+		return this.canEcho() && (PREF('clientEcho') == '1');
+	},
+	echoParam: function() {
+		return this.echo() ? '&doecho=yes' : '';
+	},
+	canStream: function() {
+		return (!!window.thaiWitterClientStream) && (xtra_timeline === '');
+	},
+	stream: function() {
+		return this.canStream() && (PREF('clientStream') == '1');
+	},
+	canGrowl: function() {
+		return !!window.thaiWitterClientNotify;
+	}
+};
+// }
+
+// --loader--
+// the feed loader {
+
+class ReloginProc implement {
+
+	error_element = $('rldata');
+	change_element = $('cadata');
+
+}
+
+class ReloginProc {
+
+	init(error) {
+		@error = error;
+		@dialog = new TWDialog('Re-Authentication', this::renderDialog, error ? 'sorry to hear that ;s' : '');
+		@dialog.show();
+	}
+
+	renderDialog(element) {
+		element.appendChild(@error ? this.constructor.error_element : this.constructor.change_element);
+		element.querySelector('.rllnk').onclick = this::fire;
+	}
+
+	fire() {
+		@pg = new Progress('Requesting...');
+		@xh = new XH('POST', #config.api.relogin + '?time=' + (new Date().getTime()) + xtra_secure);
+		@xh.setProgress(@pg);
+		@xh.oncomplete = this::loaded;
+		@xh.sendForm('tk=' + THE_TOKEN);
+	}
+
+	loaded(response) {
+		try {
+			var data = T.parseJSON(response);
+			@pg.ok ('Authentication Needed.');
+			location.replace (data.redirect);
+		} catch (e) {
+			@pg.fail ('Oops! Network Error.');
+		}
+	}
+
+}
+
+class FeedLoader {
+
+	init(feed) {
+
+		@pg = new Progress('Refreshing Timeline...');
+		@feed = feed;
+		@aborted = false;
+
+		@xh = new XH('GET', API_GET + '?time=' + (new Date().getTime()) + Capabilities.echoParam() + xtra_params + xtra_secure);
+		@xh.setProgress(@pg);
+		@xh.oncomplete = this::loaded;
+		@xh.send();
+		
+		@pg.oncancel = @xh::abort;
+
+	}
+
+	transformFromSearch(json) {
+		var out = [];
+		for (var i = 0; i < json.statuses.length; i ++) {
+			var c = json.statuses[i];
+			out.push(c);
+		}
+		return out;
+	}
+
+	loaded(response) {
+
+		try {
+
+			// parse data
+			var data = T.parseJSON(response);
+			if (data.redirect !== undefined) {
+				@pg.fail ('Authentication Needed.');
+				location.replace (data.redirect);
+				return;
+			}
+
+			// check name
+			MY_DAMN_NAME = (@xh.getResponseHeader('X-Twitter-Username'));
+			if (!MY_DAMN_NAME) MY_DAMN_NAME = '';
+
+			// check announcement
+			var announcement = (@xh.getResponseHeader('X-thaiWitter-Announcement'));
+			if (!announcement) announcement = '';
+			announcement = decodeURIComponent(announcement).replace(/^\./, '').replace(/^\s*/, '').replace(/\s*$/, '');
+			@feed.announce (announcement);
+
+			// error handling
+			if ('error' in data && data.error.match(/OAuth/)) {
+				@pg.fail ('Session Error!');
+				new ReloginProc(true);
+				return;
+			}
+
+			// check errors
+			if (data.error == 'ratelimit' && data.ratelimit) {
+			  	var minutes = Math.ceil((data.ratelimit.reset - data.ratelimit.now) / 60000);
+			  	@pg.fail ('[' + minutes + 'm] Rate Limit Exceeded');
+				return;
+			}
+
+			// handle search
+			if (data.statuses) {
+				data = this.transformFromSearch(data);
+			}
+
+			// add items to timeline
+			data.reverse ();
+			@feed.addStatusesToTimeline(data);
+
+			if (@feed.isStreaming()) {
+				@feed.notifyRestToStream();
+			}
+
+			@pg.ok ('Timeline Loaded.');
+
+		} catch (e) {
+			@feed.handleError(response, @pg, e);
+		}
+	}
+
+}
+
+// }
+
+// --streaming--
+// streaming {
+
+class StreamLoader implement {
+
+	@current = undefined;
+
+	setCurrent(loader) {
+		this.abortLast();
+		@current = loader;
+	}
+	
+	abortLast() {
+		if (@current) {
+			@current.abort();
+			delete @current;
+		}
+	}
+
+} prototype implement {
+
+	init(feed) {
+
+		this.constructor.setCurrent(this);
+
+		@feed = feed;
+		@feed.stopTimer();
+		
+		@queue = [];
+		@initiated = false;
+		@restRequested = false;
+		@pg = new Progress('Initiating User Stream...');
+
+		this.abort = this::abortGettingToken;
+		@pg.oncancel = this::abort;
+
+		this.getStream();
+
+	}
+
+	isInitiated()  @initiated;
+
+	abortGettingToken() {
+		if (@xh) {
+			@xh.abort();
+			@feed.resetTimer();
+			@pg.fail('Aborted!');
+			@feed.streamAborted();
+		}
+	}
+
+	getStream() {
+		@xh = new XH('GET', #config.api.stream + '?time=' + (new Date().getTime()) + xtra_secure);
+		@xh.oncomplete = this::oncomplete;
+		@xh.send();
+	}
+
+	oncomplete(response) {
+		if (response.substr(0, 8) == 'https://' || response.substr(0, 7) == 'http://') {
+			this.initiateStream(response);
+		} else {
+			@feed.resetTimer();
+			try {
+				var data = T.parseJSON(response);
+				if (data.redirect !== undefined) {
+					@pg.fail ('Authentication Needed.');
+					location.replace (data.redirect);
+				} else {
+					@feed.handleError(response, @pg, new Error('feed could not be loaded'));
+				}
+			} catch (e) {
+				@feed.handleError(response, @pg, e);
+			}
+		}
+	}
+
+	data(response) {
+		var x;
+		try { x = JSON.parse(response); } catch (e) { return; }
+		if (x.id_str && x.text && x.user) {
+			if (@initiated) @feed.addStatusesToTimeline([x]);
+			else @queue.push(x);
+		}
+	}
+
+	didHangUp() {
+		notify('Streaming Finished');
+		if (@pg)
+			@pg.fail('Hung up!');
+		@feed.resetTimer();
+		@feed.streamAborted();
+	}
+	
+	notifyRest() {
+		if (!@initiated) {
+			@initiated = true;
+			setTimeout (this::beginStream, 1);
+		}
+	}
+
+	beginStream() {
+		@pg.ok ('Streaming~');
+		delete @pg;
+		var statuses = [];
+		while (@queue.length) {
+			var c = @queue.shift();
+			if (c.id_str && c.text && c.user) {
+				statuses.push(c);
+			}
+		}
+		if (statuses.length > 0) @feed.addStatusesToTimeline(statuses);
+	}
+
+	initiateStream(url) {
+		if (!@restRequested) {
+			@restRequested = true;
+			@feed.doLoad();
+			@pg.intermediate ();
+		}
+		@pg.intermediate ();
+		this.abort = thaiWitterClientStream(url, this::data, this::didHangUp);
+	}
+
+}
+
+window.onbeforeunload = function() {
+	StreamLoader.abortLast();
+};
+
+// }
+
+// --feed--
+// the feed {
+
+class Feed {
+
+	init(timeline) {
+		@pressTime = 0;
+		@pressCount = 0;
+		@stream = undefined;
+		@timeline = timeline;
+		@timer = 0;
+		@firstLoad = true;
+	}
+
+	isStreaming()  !!@stream;
+	notifyRestToStream() {
+		@stream.notifyRest();
+	}
+
+	handleError(response, pg, e) {
+		if (response.indexOf('OVERCAPACITY!!!111') > -1 || response.indexOf('<h2>Twitter is over capacity.</h2>') > -1) {
+			pg.fail ('<span style="color: #f77"><b>Twitter is Over Capacity.</b> It\'ll be back shortly I hope.</span>');
+		} else if (response.indexOf('<title>The cloud is too thick...</title>') > -1) {
+			pg.fail ('<span style="color: #f77"><b>The cloud is too thick!</b> It\'ll be back shortly I hope.</span>');
+		} else if (response.indexOf('<h3>Guru Meditation:</h3>') > -1) {
+			pg.fail ('<span style="color: #f77"><b>Server down!</b> I\'m sorry. Please try again later.</span>');
+		} else {
+			pg.fail ('<span style="color: #f77" onclick="alert(unescape(\'' + escape(e.toString() + (DEBUG ? '\n[ ' + response + ' ]' : '')) + '\'))">Oops! Network Error.</span>');
+		}
+		throw e;
+	}
+
+	stopTimer() {
+		clearTimeout(@timer);
+	}
+
+	resetTimer() {
+		var rate = parseInt(PREF('refreshRate'), 10);
+		if (!isFinite(rate) || isNaN(rate) || rate < 30)
+			rate = 30;
+		this.stopTimer();
+		@timer = setTimeout(this::load, rate * 1000);
+	}
+
+	doLoad() {
+		new FeedLoader(this);
+	}
+
+	streamAborted() {
+		@stream = undefined;
+	}
+
+	load() {
+		if (Capabilities.stream()) {
+			if (!@stream) {
+				@stream = new StreamLoader(this);
+			} else {
+				if (!@stream.isInitiated()) {
+					this.doLoad();
+				} else {
+					if (new Date().getTime() - @pressTime < 1250) {
+						@pressCount++;
+						if (@pressCount <= 2) {
+							notify ('But it\'s streaming!!!');
+						} else if (@pressCount <= 6) {
+							notify ('Stop doing that!');
+						} else if (@pressCount <= 7) {
+							notify ('I will disconnect the stream if you keep pressing it!');
+						} else if (@pressCount <= 8) {
+							notify ('I really will!');
+						} else {
+							@pressCount = 0;
+							if (@stream) @stream.abort();
+						}
+					} else {
+						@pressCount = 0;
+						notify ('But it\'s streaming!');
+					}
+					@pressTime = new Date().getTime();
+				}
+			}
+			return;
+		}
+		this.resetTimer();
+		this.doLoad();
+	}
+
+	addStatusesToTimeline(data) {
+		var records = [];
+		for (var i = 0; i < data.length; i ++) records.push(Tweet.addTweet(data[i]));
+		return this.addRecordsToTimeline(records);
+	}
+
+	addRecordsToTimeline(data) {
+		@timeline.addRecords(data);
+		if (@firstLoad) {
+			@firstLoad = false;
+			this.handleFirstLoad();
+		}
+	}
+
+	handleFirstLoad() {
+		@timeline.selectItem(this.getDefaultSelectedItemIndex());
+		@timeline.checkScrolling();
+		@timeline.autoScroller.autoScroll();
+	}
+
+	getDefaultSelectedItemIndex() {
+		if (xtra_timeline == 'fave' || xtra_timeline == 'dms' || xtra_timeline == 'mentions') {
+			return @timeline.items.length - 1;
+		}
+		return 0;
+	}
+
+	announce(announcement) {
+		@timeline.setAnnouncement(announcement);
+	}
+
+}
+
+// }
+
+
+// --media--
+// a record holding a media {
+class TwitterMedia implement {
+
+	@map = {};
+
+	register(media) {
+		if (media.url)          @map[media.url]          = media;
+		if (media.expanded_url) @map[media.expanded_url] = media;
+		if (media.id_str)       @map[media.id_str]       = media;
+	}
+
+	get(id) {
+		return @map[id];
+	}
+
+}
+
+class UrlExpander implement {
+
+	@map = {};
+
+	register(url, expanded) {
+		@map[url] = expanded;
+	}
+
+	expand(url) {
+		if (@map[url] != null) return @map[url];
+		return url;
+	}
+
+}
+// }
+
+// --user-record--
+// a record holding user
+
+class UserRecord implement {
+
+	@db = {};
+	@screenNameDb = {};
+
+	normalizeName(screenName)  (screenName + '').toLowerCase();
+
+	makeUser(o, context) {
+		var id = o.id_str, normalizedScreenName = UserRecord.normalizeName(o.screen_name);
+		var user = @db[id];
+		if (!user) @db[id] = user = new UserRecord(id);
+		@screenNameDb[normalizedScreenName] = user;
+		user.load(o, context);
+		return user;
+	}
+
+	get(id) {
+		return @db[id];
+	}
+
+	find(screenName) {
+		var normalizedScreenName = UserRecord.normalizeName(screenName);
+		return @screenNameDb[normalizedScreenName];
+	}
+
+} prototype implement {
+
+	init(id) {
+		this.id = id;
+		@lastTime = -1;
+	}
+
+	load(o, s) {
+		var isNewer = false, created;
+		if (s == null) s = o.status;
+		if (s && s.created_at) {
+			created = new Date(s.created_at).getTime();
+			isNewer = (created >= @lastTime);
+		}
+		if (@lastTime == -1) isNewer = true;
+		if (isNewer && created != null) @lastTime = created;
+		var properties = [
+			['screen_name', 'username'],
+			['screen_name', 'name'],
+			['name', 'name'],
+			['profile_image_url', 'picture']
+		];
+		if (location.protocol == 'https:') {
+			properties.push(['profile_image_url_https', 'picture']);
+		}
+		for (var i = 0; i < properties.length; i ++) {
+			if (o[properties[i][0]] && (isNewer || this[properties[i][1]] == null)) {
+				this[properties[i][1]] = o[properties[i][0]];
+			}
+		}
+		this.normalizedUsername = String(this.username).toLowerCase();
+	}
+
+}
+
+// }
+
+// --user-mentions--
+// {
+
+class UserMentions implement {
+
+	parse(text) {
+		var obj = new UserMentions();
+		text.replace(/\B@([a-z0-9_A-Z]+)/g, function(all, screenName) {
+			obj.add(screenName);
+		});
+		return obj;
+	}
+
+	fromEntities(entities, text) {
+		var obj = new UserMentions();
+		for (var i = 0; i < entities.length; i ++) {
+			obj.add(entities[i].screen_name);
+		}
+		return obj;
+	}
+
+} prototype implement {
+
+	init() {
+		@map = {};
+		@list = [];
+	}
+
+	add(screenName) {
+		var name = UserRecord.normalizeName(screenName);
+		if (@map[name] == null) {
+			@map[name] = true;
+			@list.push(screenName);
+		}
+	}
+
+	getList() {
+		var all = [];
+		for (var i = 0; i < @list.length; i ++) {
+			var user = UserRecord.find(@list[i]);
+			all.push(user ? user.username : @list[i]);
+		}
+		return all;
+	}
+
+	contains(screenName)  @map[UserRecord.normalizeName(screenName)] != null;
+
+}
+
+// }
+
+// --record--
+// a structure holding a record {
+
+class Tweet implement {
+	
+	@all       = [];
+	@db        = {}; // id to tweet record
+	@adjacency = {}; // id to branches (replies and retweets) = adjacency map
+
+	getTweet(id, create) {
+		if (create && !(id in @db)) {
+			@db[id] = new Tweet();
+			@all.push(@db[id]);
+		}
+		if (@db[id]) {
+			return @db[id];
+		}
+	}
+
+	getAllTweets()  @all;
+
+	addTweet(item) {
+		var tweet = this.getTweet(item.id_str, true);
+		tweet.load(item);
+		return tweet;
+	}
+
+	addPlaceholder(item) {
+		var tweet = this.getTweet(item.id, true);
+		tweet.placeholder(item);
+		return tweet;
+	}
+
+	addConnection(parentID, child) {
+		if (!(parentID in @adjacency)) @adjacency[parentID] = {};
+		@adjacency[parentID][child.id] = child;
+	}
+
+	getBranches(child) {
+		return @adjacency[child.id];
+	}
+
+	getters = {
+		text:   function(tweet) { return tweet.decodedText; },
+		source: function(tweet) { return tweet.source ? tweet.source.name : 'N/A'; },
+		from:   function(tweet) { return tweet.user.username; }
+	};
+
+} prototype implement {
+	
+	init() {
+		this.id = -1;
+		this.items = [];
+		this.text = '';
+		this.loaded = false;
+		this.jobs = 0;
+	}
+
+	placeholder(item) {
+		if (!this.loaded) {
+			this.id = item.id;
+			this.user = item.user;
+		}
+	}
+
+	doJob() {
+		this.jobs ++;
+		this.updateJobs();
+		return this::doneJob;
+	}
+	
+	doneJob() {
+		this.jobs --;
+		this.updateJobs();
+	}
+
+	load(item) {
+		var match;
+		this.id = item.id_str;
+		this.loaded = true;
+		this.date = T.date.parse(item.created_at);
+		this.setFaved(item.favorited);
+		if (item.in_reply_to_status_id) {
+			this.reply = this.constructor.addPlaceholder({
+				id: item.in_reply_to_status_id_str,
+				user: UserRecord.makeUser({
+					screen_name: item.in_reply_to_screen_name,
+					id_str: item.in_reply_to_user_id_str
+				})
+			});
+			this.constructor.addConnection(this.reply.id, this);
+		}
+		if (item.retweeted_status) {
+			this.retweet = this.constructor.addTweet(item.retweeted_status);
+			this.constructor.addConnection(this.retweet.id, this);
+		}
+		this.text = item.text;
+		this.decodedText = _.unescape(this.text);
+		this.textData = T.text(this.decodedText);
+		this.source = {
+			url: '',
+			name: 'N/A'
+		};
+		if (item.source) {
+			if ((match = item.source.match(/^<a href="([^"]+)"/))) {
+				this.source.url = match[1];
+			}
+			if ((match = item.source.match(/([^<>]+)(<\/a>)?$/))) {
+				this.source.name = match[1];
+			}
+		}
+		var userObject = item.user;
+		if (!userObject) userObject = item.sender;
+		this.user = UserRecord.makeUser(userObject, item);
+		this.mine = this.user && this.user.username == MY_DAMN_NAME;
+		this.mention = MY_DAMN_NAME !== '' && (UserMentions.parse(this.text).contains(MY_DAMN_NAME));
+		this.mentions = (item.entities && item.entities.user_mentions) ? UserMentions.fromEntities(item.entities.user_mentions, item.text) : UserMentions.parse(this.text);
+		this.protect = !!userObject['protected'];
+		this.dm = !item.user && !!item.sender;
+		if (item.entities && item.entities.urls) {
+			for (var i = 0; i < item.entities.urls.length; i ++) {
+				if (item.entities.urls[i].expanded_url && item.entities.urls[i].display_url) {
+					UrlExpander.register(item.entities.urls[i].url, item.entities.urls[i].expanded_url);
+				}
+			}
+		}
+		this.entities = item.entities;
+		if (this.entities && this.entities.media && this.entities.media.length > 0) {
+			for (var i = 0; i < this.entities.media.length; i ++) {
+				TwitterMedia.register(this.entities.media[i]);
+			}
+		}
+		this.geo = item.geo;
+		for (var i = 0; i < this.items.length; i ++) {
+			this.items[i].renderElement();
+		}
+
+		// mt
+		this.findMt()
+	}
+
+	findMt() {
+	  	var m = this.text.match(/^\s*MT\s+@([a-z0-9_A-Z]+)/)
+	  	if (m) {
+			this.mt = this.constructor.addPlaceholder({
+				id: '_mt_' + this.id,
+				user: UserRecord.makeUser({
+					screen_name: 'MT',
+					id_str: '_mt_user'
+				})
+			});
+			this.mt.mtChild = this
+			this.mt.mtOwner = m[1]
+			this.constructor.addConnection('_mt_' + this.id, this);
+		}
+	}
+
+	getProperty(name) {
+		return (name in Tweet.getters) ? Tweet.getters[name](this) : '';
+	}
+
+	updateJobs(num) {
+		for (var i = 0; i < this.items.length; i ++) {
+			this.items[i].updateJobs();
+		}
+	}
+
+	remove(num) {
+		for (var i = 0; i < this.items.length; i ++) {
+			this.items[i].getTimeline().removeItem(this.items[i]);
+		}
+	}
+
+	addItem(item) {
+		this.items.push(item);
+	}
+
+	test(str) {
+		if (this.user.username.toLowerCase().indexOf(str.toLowerCase()) > -1) {
+			return true;
+		}
+		if (this.decodedText.toLowerCase().indexOf(str.toLowerCase()) > -1) {
+			return true;
+		}
+		if ((this.user.username + ' ' + this.decodedText).toLowerCase().indexOf(str.toLowerCase()) > -1) {
+			return true;
+		}
+		return false;
+	}
+
+	getRetweetText() {
+		return this.getRetweetPrefix() + ': ' + this.decodedText;
+	}
+
+	getRetweetPrefix() {
+		return 'RT @' + this.user.username;
+	}
+
+	setItemState(k, v) {
+		for (var i = 0; i < this.items.length; i ++) {
+			this.items[i].setState(k, v);
+		}
+	}
+
+	check() {
+		var mention = UserMentions.parse(#tweetBox.getText()).contains(this.user.username) && !~(#tweetBox.getText().indexOf(this.getRetweetPrefix()));
+		var replyClass = (mention || #tweetBox.getText() === this.getRetweetText()) ? 'status-reply-to' : '';
+		this.setItemState('replying', replyClass);
+		return mention;
+	}
+
+	uncheck() {
+		this.setItemState('replying', '');
+	}
+
+	toggleFave() {
+		new FaveToggler(this).toggle();
+	}
+	
+	setFaved(flag) {
+		this.favorited = flag;
+		this.setItemState('fave', flag ? 'status-faved' : '');
+	}
+
+	reHighlight() {
+		this.highlighted = #highlighter.check(this.text, this);
+		this.setItemState('highlight', this.highlighted ? 'status-highed' : '');
+	}
+
+	getBranches()  this.constructor.getBranches(this);
+
+	getParent()    this.reply || this.retweet || this.mt;
+
+	findRoot() {
+		var root = this;
+		while ( (prnt = root.getParent()) ) {
+			root = prnt;
+		}
+		return root;
+	}
+
+}
+
+class FaveToggler {
+
+	init(record) {
+		@record = record;
+	}
+
+	toggle() {
+		@mode   = @record.favorited ? 'destroy' : 'create';
+		@target = !@record.favorited;
+		@record.setFaved(@target);
+		this.request();
+	}
+
+	request() {
+		@job = @record.doJob();
+		@xh = new XH('POST', #config.api.fave + '?time=' + (new Date().getTime()));
+		@xh.oncomplete = this::oncomplete;
+		@xh.sendForm('mode=' + @mode + '&id=' + @record.id + '&tk=' + THE_TOKEN);
+	}
+
+	oncomplete(response) {
+		try {
+			var data = T.parseJSON(response);
+			if (data.id_str) {
+				@record.setFaved(@target);
+			} else {
+				@record.setFaved(!@target);
+			}
+		} catch (e) {
+			notify ('Couldn\'t Save Favourite');
+			@record.setFaved(!@target);
+		}
+		@job();
+	}
+
+}
+
+// }
+
+// --notifier--
+
+class Notifier {
+
+	overridden = false;
+
+	init() {
+		this.reset();
+		@timer = 0;
+	}
+
+	reset() {
+		@count = 0;
+		@mention = false;
+		@highlight = false;
+		@main = undefined;
+	}
+
+	addRecord(record) {
+		@count ++;
+		if (record.mention) {
+			@mention = true;
+			@main = record;
+		}
+		if (record.highlighted) {
+			@highlight = true;
+			if (!@mention) @main = record;
+		}
+		if (!@main) {
+			@main = record;
+		}
+	}
+
+	getDelay() {
+		if (@mention) {
+			return 0;
+		} else {
+			return (@highlight ? 1000 : 10000) * Math.sqrt(Math.max(0, 1 - this.count / 15));
+		}
+	}
+
+	commit(now) {
+		clearTimeout(@timer);
+		@timer = setTimeout(this::notify, now ? 0 : this.getDelay());
+	}
+
+	notify() {
+		if (@count > 0) {
+			var title = (@count == 1) ? '1 new tweet.' : @count + ' new tweets.';
+			var text = @main.user.username + ' ' + @main.text;
+			if (@mention) {
+				text += ' [Your Name Mentioned!]';
+			} else if (@highlight) {
+				text += ' [Highlight]';
+			} else {
+				text += ' ';
+			}
+			var mode = PREF('sysNotifyMode'), shouldShow = false;
+			if (this.overridden) shouldShow = true;
+			else if (mode == '2' && @mention) shouldShow = true;
+			else if (mode == '3' && (@mention || @highlight)) shouldShow = true;
+			else if (mode != '2' && mode != '3') shouldShow = true;
+			var picture;
+			if (PREF('notificationPicture') == '1') {
+				picture = @main.user.picture;
+			}
+			if (window.sessionStorage && sessionStorage.getItem('notify' + @main.id)) shouldShow = false;
+			if (shouldShow) {
+				sysNotify(title, text, this.overridden, picture);
+				sessionStorage.setItem('notify' + @main.id, true);
+			}
+		}
+		this.reset();
+	}
+
+}
+
+// }
+
+// --announcement--
+// announcement component {
+
+class Announcement {
+
+	init(txt) {
+		@element = C('announce');
+		@element.innerHTML =
+			'<div class="announce-padder">' +
+				'<div class="announce-wrap">' +
+					'<div class="announce-title">Announcement</div>' +
+					'<div class="announce-text">' + txt + '</div>' +
+				'</div>' +
+			'</div>';
+		@padder = @element.firstChild;
+	}
+
+	renderTo(container) {
+		container.appendChild(@element);
+		@padder.style.marginTop = (-@padder.offsetHeight) + 'px';
+		dtjs2.a.c (1, 0, 0.8, this::animationFrame, dtjs2.ease.o);
+	}
+
+	animationFrame(v) {
+		@padder.style.marginTop = (v * -@padder.offsetHeight) + 'px';
+	}
+
+}
+
+// }
+
+// --item--
+// the item component,
+// an on screen representative of a record {
+
+var expandURL = function(url) { return UrlExpander.expand(url); }
+
+class Item {
+
+	meta = ['Retweet', 'Geolocation', 'Date', 'Source', 'Reply'];
+
+	getElement()  @element;
+	getTimeline() @timeline;
+
+	init(timeline, changeset, record) {
+		@timeline = timeline;
+		if (changeset) @changeset = changeset;
+
+		@record = this.record = record;
+		@record.addItem(this);
+		@element = C('status');
+		@content = C('status-content');
+		@element.appendChild(@content);
+		@element.setAttribute('data-tw-status-item', @record.id);
+		this.renderElement();
+		@state = {};
+		if (@record.mention) {
+			this.setState('mention', 'status-mention');
+		}
+		if (@record.favorited) {
+			this.setState('fave', 'status-faved');
+		}
+		@record.reHighlight();
+		this.reFilter();
+	}
+
+	setState(stateName, stateValue) {
+		@state[stateName] = stateValue;
+		var className = 'status';
+		for (var i in @state) {
+			className += ' ' + @state[i];
+		}
+		@element.className = className;
+	}
+
+	updateJobs() {
+		var num = @record.jobs;
+		if (num === 0) {
+			@element.style.opacity = '';
+		} else {
+			@element.style.opacity = 1 / (1 + (num * 0.6));
+		}
+	}
+
+	getFormattedText() {
+		if (@record.retweet) {
+			return '<span class="status-retweet-this-is-newer">' +
+				'RT ' + this.formatText(T.text('@' + @record.retweet.user.username)) + '<span class="status-rt">:</span>' +
+			'</span> ' + this.formatText(@record.retweet.textData);
+		}
+		return this.formatText(@record.textData);
+	}
+
+	formatDate(cdate) {
+	  	return T.date.format(cdate, new Date())
+	}
+
+	formatText(textData) {
+	  	var shouldExpand = T.text.shouldExpand(expandURL, textData);
+		return textData.stringify({
+		  	text: function(e) {
+			  	return _.escape(e.text);
+			},
+			hashtag: function(e) {
+			  	var hashtag = e.text;
+				return '<span class="status-link-this-is-new" ' + dataAttr('search', hashtag) + '>' + _.escape(hashtag) + '</span>';
+			},
+			url: function(e) {
+				var url = e.text;
+				var display = url;
+				var expanded = expandURL(url)
+				var title = expanded
+				if (shouldExpand) {
+					display = expanded;
+					title = url
+				}
+				if (title == display) title = ''
+				return '<span islink="yes" class="status-link-this-is-new" '
+					+ dataAttr('url', url) + ' ' + dataAttr('url2', expanded) + ' title="' + _.escape(title) + '">'
+					+ _.escape(T.decodeUTF(display)) + '</span>';
+			},
+			user: function(e) {
+				var user = e.text;
+				var normalized = UserRecord.normalizeName(user.substr(1))
+				return '<span class="status-link-this-is-new" data-username="' + normalized + '" ' + dataAttr('username', user.substr(1)) + '>' + user + '</span>';
+			},
+			list: function(e) {
+				var list = e.text;
+				return '<span class="status-link-this-is-new" ' + dataAttr('username', user.substr(1)) + '>' + user + '</span>';
+			}
+		});
+	}
+
+	render()           @record.loaded ? this.renderLoaded() : this.renderNotLoaded();
+
+	renderNotLoaded()
+		'<div class="status-load" ' + dataAttr('load', @record.id) + '>' +
+		(@record.mtChild ? 'guess original tweet' : 'load more') +
+		'</div>';
+	
+	renderLoaded()
+		'<img class="status-picture" src="' + @record.user.picture + '" ' + dataAttr('username', @record.user.username) + '>' +
+		'<div class="status-inner">' +
+			this.renderInner() +
+		'</div>';
+
+	renderInner()
+		'<span class="status-username"><span class="status-username-text">' + @record.user.username + '</span> </span>' +
+		'<span class="status-text"> ' + this.getFormattedText() + ' </span>' +
+		'<span class="status-date">' + this.getMeta() + '</span>';
+	
+	renderTo(container) {
+		container.appendChild(@element);
+	}
+	renderElement(container) {
+		if (@innerElement) {
+			@innerElement.innerHTML = this.renderInner();
+		} else {
+			@content.innerHTML = this.render();
+			if (@content.querySelector) {
+				@innerElement = @content.querySelector('div.status-inner');
+			}
+		}
+		if (@record.loaded && @record.user) {
+			@element.setAttribute('data-username', UserRecord.normalizeName(@record.user.username));
+			@element.setAttribute('data-user', @record.user.id);
+		}
+	}
+	getMeta() {
+		var meta = '';
+		for (var i = 0; i < this.meta.length; i ++) {
+			meta += this['meta' + this.meta[i]]();
+		}
+		return meta;
+	}
+	metaRetweet() {
+		if (!@record.retweet) return '';
+		return '<span class="status-retweet-indicator status-date-link" ' + dataAttr('owner', @record.retweet.user.username) + ' ' + dataAttr('status', @record.retweet.id) + '>(rt) </span>';
+	}
+	metaGeolocation() {
+		if (!@record.geo || !@record.geo.coordinates || !@record.geo.coordinates.join) return '';
+		return '<span class="status-geo-indicator status-date-link" ' + dataAttr('geo', @record.geo.coordinates.join(',')) + '>(geo) </span>';
+	}
+	metaDate() {
+		return '<span class="status-date-text status-date-link" ' + dataAttr('owner', @record.user.username) + ' ' + dataAttr('status', @record.id) + '>' + this.formatDate(@record.date) + '</span>';
+	}
+	metaSource() {
+		var src = @record.source.name;
+		if (@record.source.url !== '')
+			src = '<span class="status-date-link" ' + dataAttr('url', @record.source.url) + '>' + src + '</span>';
+		return '<span class="status-client"> from ' + src + '</span>';
+	}
+	metaReply() {
+		if (!@record.reply) return '';
+		return '<span class="status-in-reply-to"> <span class="status-date-link" ' + dataAttr('reply-to', @record.id) + '> &raquo; ' + @record.reply.user.username + '</span></span>';
+	}
+
+	getPosition() {
+		return @element.offsetTop - (@changeset ? @changeset.getMargin() : 0);
+	}
+	getHeight() {
+		return @element.offsetHeight;
+	}
+	reFilter() {
+		this.visible = @record.mention || !#filter.check(@record.text, @record);
+		this.setState('filtered', this.visible ? '' : 'status-filtered');
+	}
+
+}
+
+// }
+
+// --changeset--
+// set of tweets in an update
+
+class Changeset {
+
+	init(single) {
+		@element = C('changeset');
+		@items = [];
+		@margin = 0;
+		@single = single;
+	}
+	
+	finish() {
+		if (@items.length > 0) {
+			dtjs2.a.c (0, 1, 0.8, function(v) {
+				var margin = Math.round(window.innerHeight * (1 - v));
+				@margin = margin;
+				@element.style.marginTop = margin + 'px';
+			}.b(this), dtjs2.ease.sine.o);
+		}
+	}
+
+	renderTo(element) {
+		element.appendChild(@element);
+	}
+
+	add(item) {
+		@items.push(item);
+	}
+
+	isSingle()    @single;
+	getElement()  @element;
+	getMargin()   @margin;
+
+}
+
+// }
+
+
+
+// --base-timeline--
+
+class BaseTimeline {
+
+	// --base-timeline-factories-- {
+	createCommands()      new TimelineCommands(this);
+	createKeyHandler()    new TimelineKeyHandler(this);
+	createMouseHandler()  new TimelineMouseHandler(this);
+	// }
+
+	// --base-timeline-init-- {
+	init() {
+		
+		@changeset = undefined;
+
+		this.initScrollingSystem();
+		this.holdScroller = new HoldScroller(this);
+		this.cmd          = this.createCommands();
+		this.keyHandler   = this.createKeyHandler();
+		this.mouseHandler = this.createMouseHandler();
+
+		this.items        = [];        // visible items
+		this.allItems     = [];        // ALL items
+		this.map          = {};        // map ID to items
+
+		@selectedItem = undefined; // selected item
+
+		this.checkScrollPeriodically();
+		this.initChangers();
+
+	}
+	// }
+
+	// --base-timeline-selection-- {
+
+	getCurrent()  @selectedItem;
+	selectItem(n, noScroll) {
+		this.select(this.items[n], noScroll);
+	}
+	select(item, noScroll) {
+		if (@selectedItem) @selectedItem.setState('selected', '');
+		item.setState('selected', 'status-selected');
+		@selectedItem = item;
+		this.restat();
+		if (!noScroll) this.checkScrolling();
+	}
+	selectById(id) {
+		this.select(this.map[id]);
+	}
+	moveItem(offset, noScroll) {
+		if (!@selectedItem) return;
+		var n = @selectedItem.index + offset;
+		if (n > this.items.length - 1) {
+			n = this.items.length - 1;
+		} else if (n < 0) {
+			n = 0;
+		}
+		this.selectItem(n, noScroll);
+	}
+	moveScroll(offset) {
+		var c = this.getCurrent();
+		if (!c) return;
+		var oldIndex = c.index, newIndex, add = 0,
+			topAnchor = c.getPosition() - this.getScrollPos(),
+			bottomAnchor = topAnchor + c.getHeight(),
+			threshould = 150,
+			visible = {
+				top:    el.head.offsetHeight + threshould,
+				bottom: this.getHeight() - el.tweetData.offsetHeight - threshould
+			};
+		this.moveItem (offset, true);
+		c = #timeline.getCurrent();
+		newIndex = c.index;
+		if (oldIndex == newIndex) {
+			add = c.getHeight();
+		}
+		if (offset > 0) {
+			topAnchor += (visible.top - topAnchor) / 10;
+			#timeline.setScrollPos (c.getPosition() - topAnchor + add);
+		} else {
+			bottomAnchor += (visible.bottom - bottomAnchor) / 10;
+			#timeline.setScrollPos (c.getPosition() + c.getHeight() - bottomAnchor - add);
+		}
+	}
+	movePage(direction) {
+		var current = 0,
+			visible = this.getVisibleArea(),
+			target = visible.bottom - visible.top,
+			last = @selectedItem.index;
+		for (var i = last; 0 <= i && i < this.items.length; i += direction) {
+			current += this.items[i].getHeight();
+			if (current > target) {
+				break;
+			}
+			last = i;
+		}
+		this.selectItem(last);
+	}
+	find(query, direction) {
+		var last = @selectedItem.index;
+		for (var i = last + direction; 0 <= i && i < this.items.length; i += direction) {
+			if (query === '' ? this.items[i].record.mention : this.items[i].record.test(query)) {
+				this.selectItem(i);
+				return;
+			}
+			last = i;
+		}
+		if (query === '') this.selectItem(last);
+		else notify((direction > 0 ? 'End of timeline reached.' : 'Start of timeline reached.'));
+	}
+
+	// }
+
+	// --base-timeline-stat-- {
+	scrollStatChanged(x) {
+	}
+	unreadStatChanged(x) {
+	}
+	initChangers() {
+		@changeScrollStat = T.changer(this::scrollStatChanged);
+		@changeUnreadStat = T.changer(this::unreadStatChanged);
+	}
+	restat() {
+		var count = this.allItems.length, unread = 0, mentions = 0;
+		@changeScrollStat((@selectedItem.realIndex + 1) + ' / ' + count);
+		for (var i = @selectedItem.index + 1; i < this.items.length; i ++) {
+			unread ++;
+			if (this.items[i].record.mention) mentions ++;
+		}
+		if (window.platform && window.platform.icon) {
+			try {
+				window.platform.icon().badgeText = mentions === 0 ? '' : mentions;
+			} catch (e) {
+			}
+		}
+		@changeUnreadStat ((unread ? '(' + (mentions ? mentions + '! ' : '') + unread + ') ' : '') + xtra_keyword + '@' + MY_DAMN_NAME + ' ' + APP_NAME);
+	}
+	
+	// }
+
+	// --base-timeline-add-- {
+
+	beginChangeset(single) {
+		@changeset = new Changeset(single === true ? true : false);
+	}
+
+	endChangeset() {
+
+		var changeset = @changeset;
+		@changeset = undefined;
+
+		changeset.finish();
+		changeset.renderTo(this.element);
+
+		if (this.notifier) {
+			this.notifier.commit(!changeset.isSingle());
+		}
+		if (@selectedItem != null) {
+			this.restat();
+		}
+		return changeset;
+
+	}
+
+	createItem(record) {
+		if (this.map[record.id]) {
+			return this.map[record.id];
+		}
+		var item = new Item(this, @changeset, record);
+		this.map[record.id] = item;
+		return item;
+	}
+
+	appendItem(item) {
+		item.realIndex = this.allItems.length;
+		this.allItems[item.realIndex] = item;
+		if (item.visible) {
+			item.index = this.items.length;
+			this.items[item.index] = item;
+		}
+	}
+
+	addRecords(items) {
+		this.beginChangeset();
+		for (var i = 0; i < items.length; i ++) {
+			this.addRecord(items[i]);
+		}
+		this.endChangeset();
+	}
+
+	setRecords(records) {
+		while (this.element.firstChild) this.element.removeChild(this.element.firstChild);
+		this.items    = [];
+		this.allItems = [];
+		for (var i = 0; i < records.length; i ++) {
+			var record = records[i];
+			var item   = this.createItem(record);
+			this.renderItem(item);
+			this.appendItem(item);
+		}
+	}
+
+	addRecord(record) {
+		if (!@changeset) {
+			this.beginChangeset(true);
+			var item = this.addRecord(record);
+			this.endChangeset();
+			return item;
+		}
+		if (this.map[record.id]) {
+			return this.map[record.id];
+		}
+		var item = this.createItem(record);
+		this.renderItem(item);
+		this.appendItem(item);
+		@changeset.add(item);
+		if (this.notifier && item.visible) {
+			this.notifier.addRecord(record);
+		}
+		return item;
+	}
+
+	renderItem(item) {
+		if (@changeset) {
+			item.renderTo(@changeset.getElement());
+		} else {
+			item.renderTo(this.element);
+		}
+	}
+	addItem(raw) {
+		return this.addRecord(Tweet.addTweet(raw));
+	}
+
+	// }
+
+	// --base-timeline-remove-- {
+	timelineStructureChanged(start) {
+		// try to select next item
+		var length = this.allItems.length;
+		for (var i = start, j = start; 0 <= i || j < length; i --, j ++) {
+			if (j < length && this.allItems[j].visible) {
+				this.select(this.allItems[j]);
+				break;
+			}
+			if (i != j && 0 <= i && this.allItems[i].visible) {
+				this.select(this.allItems[i]);
+				break;
+			}
+		}
+		this.restat();
+	}
+
+	removeItem(item) {
+		this.allItems.splice(item.realIndex, 1);
+		this.items.splice(item.index, 1);
+		var el = item.getElement();
+		delete this.map[item.record.id];
+		for (var i = item.realIndex; i < this.allItems.length; i ++) {
+			this.allItems[i].realIndex = i;
+		}
+		for (var i = item.index; i < this.items.length; i ++) {
+			this.items[i].index = i;
+		}
+		if (el.parentNode) el.parentNode.removeChild(el);
+		this.timelineStructureChanged(item.realIndex);
+	}
+	// }
+
+}
+// }
+
+// --base-timeline-scroll-- {
+class BaseTimeline(scrolling) {
+	
+	initScrollingSystem() {
+		@@scrollPos = 0;       // target position
+		@@curScrollPos = 0;    // current position
+		this.scrollTo(0, 0);
+	}
+	getHeight()                 this.element.parentNode.offsetHeight;
+	getTopPad()                 0;
+	getBottomPad()              0;
+	getMinScroll()              0;
+	getMaxScroll()              Math.max(0, this.element.offsetHeight - this.element.parentNode.offsetHeight);
+	getDefaultThreshould()      100;
+
+	// internal use
+	scrollTo(x, y) {
+		this.element.style.top = (-y) + 'px';
+	}
+
+	// scrolling: use this!
+	shouldSmoothScroll()  !this.holdScroller.isScrolling();
+	getScrollPos()         @@scrollPos;    // normal usage
+	getCurrentScrollPos()  @@curScrollPos; // real current scrolling pos
+
+	// scroll to some place
+	setScrollPos(x, noSmooth) {
+		x = Math.round(Math.max(Math.min(x, this.getMaxScroll()), this.getMinScroll()));
+		@@scrollPos = x;
+		if (!this.shouldSmoothScroll() || noSmooth) {
+			@@curScrollPos = x;
+			this.scrollTo (0, x);
+		} else {
+			dtjs2.a.m.add (this::scroller);
+			this.scroller();
+		}
+	}
+
+	shiftScrollPos(x) {
+		@@scrollPos    = Math.round(@@scrollPos + x);
+		@@curScrollPos = Math.round(@@curScrollPos + x);
+		this.scrollTo (0, @@curScrollPos);
+	}
+
+	// scroll tracking
+	scroller() {
+		if (!@animationInfo) {
+			@animationInfo = {};
+		}
+		var info = @animationInfo;
+		if (info.target != @@scrollPos) {
+			info.target = @@scrollPos;
+			info.x0 = Math.abs(@@curScrollPos - @@scrollPos);
+			info.v0 = (info.v == null ? 0 : info.v);
+			info.direction = @@curScrollPos < @@scrollPos ? -1 : 1;
+			info.start = new Date().getTime() - 1000 / 60;
+		}
+		@@curScrollPos = @@scrollPos;
+		var t = (new Date().getTime() - info.start) / 1000 * 50;
+		var coeff = 5; // acceleration coefficient
+		var friction = 0.27; // friction
+		var a = -friction * -(coeff / 2);
+		var b = -friction * info.v0 + coeff;
+		var c = -friction * info.x0 - info.v0;
+		var critical = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+		var x = 0;
+		var shouldContinue = true;
+		if (t >= critical) {
+			x = (info.x0 + info.v0 * critical - coeff / 2 * critical * critical) * Math.exp(-friction * (t - critical));
+			info.v = -friction * x;
+		} else {
+			x = (info.x0 + info.v0 * t - coeff / 2 * t * t);
+			info.v = info.v0 - coeff * t;
+		}
+		@@curScrollPos = Math.round(info.target + info.direction * x);
+		if (t >= critical && info.v > -0.2) {
+			info.v = 0;
+			@@curScrollPos = info.target;
+			shouldContinue = false;
+		}
+		this.scrollTo(0, @@curScrollPos);
+		return shouldContinue;
+	}
+
+	// check that the current item is in the visible area
+	checkScrolling(threshould) {
+		if (!@selectedItem) return;
+		if (threshould === undefined) threshould = this.getDefaultThreshould();
+		var c = @selectedItem;
+
+		// item
+		var t = c.getPosition(),
+			b = t + c.getHeight(),
+			v = this.getVisibleArea();
+
+		v.top += threshould;
+		v.bottom -= threshould;
+
+		if (b > v.bottom) {
+			this.setScrollPos (b - #timeline.getHeight() + this.getBottomPad() + threshould);
+		} else if (t < v.top) {
+			this.setScrollPos (t - this.getTopPad() - threshould);
+		}
+	}
+
+	getVisibleArea() {
+		var tt = this.getScrollPos() + this.getTopPad();
+		var bb = this.getScrollPos() + this.getHeight() - this.getBottomPad();
+		return { top: tt, bottom: bb };
+	}
+	autoCheckScrolling() {
+		if (this.shouldSmoothScroll()) this.checkScrolling(0);
+	}
+	checkScrollPeriodically() {
+		setInterval (this::autoCheckScrolling, 500);
+	}
+
+}
+// }
+
+// --timeline--
+// the timeline component {
+
+class Timeline extends BaseTimeline {
+
+	// --timeline-init-- {
+	init() {
+
+		this.element  = $('tweet-display');
+		this.feed     = new Feed(this);
+		this.notifier = #notifier;
+		this.announcement = '';
+
+		super();
+
+		this.autoScroller = new AutoScroller(this);
+
+	}
+	// }
+
+	// --timeline-scroll-- {
+	getHeight()                 window.innerHeight;
+	getTopPad()                 el.head.offsetHeight;
+	getBottomPad()              el.tweetData.offsetHeight;
+	getMaxScroll()              document.documentElement.scrollHeight - window.innerHeight;
+
+	scrollTo(x, y) {
+		window.scrollTo (0, y);
+	}
+	// }
+	
+	// --timeline-stat-- {
+	scrollStatChanged(x) {
+		el.status.scroll.innerHTML = x;
+	}
+	unreadStatChanged(x) {
+		document.title = x;
+	}
+	// }
+
+	// --timeline-announcement-- {
+	setAnnouncement(announcement) {
+		if (this.announcement !== announcement) {
+			this.announcement = announcement;
+			if (announcement !== '') {
+				this.addAnnouncement(announcement);
+			}
+		}
+	}
+	addAnnouncement(txt) {
+		var announcement = new Announcement(txt);
+		announcement.renderTo(this.element);
+	}
+	// }
+
+	// --timeline-highlight-- {
+	reFilter() {
+		if (this.allItems.length === 0) return;
+		var start = @selectedItem.realIndex, length = this.allItems.length;
+		this.items = [];
+		for (var i = 0; i < length; i ++) {
+			this.allItems[i].reFilter();
+			if (this.allItems[i].visible) {
+				this.allItems[i].index = this.items.length;
+				this.items[this.items.length] = this.allItems[i];
+			}
+		}
+		this.timelineStructureChanged(start);
+	}
+	// }
+
+}
+
+// }
+
+// --tl-mouse--
+
+class TimelineMouseHandler {
+
+	handlers = {};
+	register = implementable('handlers');
+
+	init(timeline) {
+		@timeline = timeline;
+		@timeline.element.addEventListener('click', this::handleClick, false);
+	}
+
+	handleClick(e) {
+		var c;
+		function h(n) { return c.hasAttribute('data-tw-' + n); }           // has attribute
+		function g(n) { return unescape(c.getAttribute('data-tw-' + n)); } // get attribute
+		for (c = e.target; c && c !== this.element && c !== document.body; c = c.parentNode) {
+			if (c.hasAttribute) {
+				for (var i in this.handlers) {
+					if (h(i)) {
+						this.handlers[i].call(this, e, c, g);
+					}
+				}
+			}
+		}
+	}
+
+} .register({
+
+	'status-item': function(e, c, g) {
+		@timeline.selectById(g('status-item'));
+		return;
+	},
+	'username': function(e, c, g) {
+		if (!e.shiftKey && !e.metaKey) pwns('?u=' + g('username'));
+		else open_link('https://twitter.com/' + g('username'));
+	},
+	'search': function(e, c, g) {
+		if (!e.shiftKey && !e.metaKey) pwns('?q=' + encodeURIComponent(g('search')));
+		else open_link('https://search.twitter.com/search?q=' + encodeURIComponent(g('search')));
+	},
+	'status': function(e, c, g) {
+		open_link('https://twitter.com/' + g('owner') + '/status/' + g('status'));
+	},
+	'reply-to': function(e, c, g) {
+		var id = g('reply-to'), record = @timeline.map[id].record;
+		open_link('https://twitter.com/' + record.reply.user.username + '/status/' + record.reply.id);
+	},
+	'url': function(e, c, g) {
+		var url = (e.shiftKey != (PREF('skipTCo') == '1') && c.hasAttribute('data-tw-url2') ? g('url2') : g('url'));
+		if (!url.match(/^[a-z0-9]+:/)) url = 'http://' + url;
+		UrlHandler.handle(url, e);
+	},
+	'geo': function(e, c, g) {
+		var s = g('geo').split(',');
+		showMap(s[0], s[1], false);
+	}
+
+});
+
+// }
+
+// --nextreply-- {
+
+var getNextReplyText = function() {
+	function normalize(x) {
+		return x.toLowerCase();
+	}
+	function parseMentions(text) {
+		var list = [];
+		text.replace(/\B@([a-z0-9_A-Z]+)/g, function(all, screenName) {
+			list.push('@' + screenName);
+		});
+		return list;
+	}
+	function parseInitialMentions(text) {
+		var match = text.match(/^((?:@[a-zA-Z0-9_]+[ ]+)*(?:@[a-zA-Z0-9_]+))/);
+		if (!match) return { list: [], length: 0 };
+		return {
+			list: match[0].split(/[ ]+/),
+			length: match[0].length
+		};
+	}
+	function tomap(list) {
+		var map = {};
+		for (var i = 0; i < list.length; i ++) {
+			map[normalize(list[i])] = list[i];
+		}
+		return map;
+	}
+	function removeNorm(list, ntext) {
+		for (var j = 0; j < list.length; j ++) {
+			if (normalize(list[j]) == ntext) {
+				list.splice(j, 1);
+				break;
+			}
+		}
+	}
+	return function(myName, myText, yourName, yourText) {
+
+		var replies = parseInitialMentions(myText);
+		var replyList = replies.list;
+		var replyMap = tomap(replyList);
+		var remainder = myText.substr(replies.length);
+
+		// first, make sure the user to reply is already included
+		if (!replyMap[normalize('@' + yourName)]) {
+			return '@' + yourName + ' ' + myText;
+		}
+
+		// move the user to front
+		removeNorm(replyList, normalize('@' + yourName));
+		replyList.unshift('@' + yourName);
+
+		// then, gather a list of people to reply to
+		var peopleToConsider = parseMentions(yourText);
+		var peopleToIgnore = tomap(parseMentions(remainder));
+		peopleToIgnore[normalize('@' + myName)] = '@' + myName;
+		peopleToIgnore[normalize('@' + yourName)] = '@' + yourName;
+
+		// create a final list of people that needs to be added
+		var peopleToAdd = [];
+		for (var i = 0; i < peopleToConsider.length; i ++) {
+			if (peopleToIgnore[normalize(peopleToConsider[i])] == undefined) {
+				peopleToAdd.push(peopleToConsider[i]);
+				removeNorm(replyList, normalize(peopleToConsider[i]));
+			}
+		}
+
+		// now, construct a new reply list
+		var newReplyList = [replyList[0]];
+		for (var i = 0; i < peopleToAdd.length; i ++) {
+			newReplyList.push(peopleToAdd[i]);
+		}
+		for (var i = 1; i < replyList.length; i ++) {
+			newReplyList.push(replyList[i]);
+		}
+
+		return newReplyList.join(' ') + remainder.replace(/^\s*/, function(all) {
+			if (all == null || all == '') return ' '; return all;
+		});
+
+	};
+}();
+
+// }
+
+// --tl-cmd--
+// commands specific to a timeline {
+
+class TimelineCommands {
+
+	init(timeline) {
+		@timeline = timeline;
+	}
+
+	reload() { (@timeline.feed || #mainTimeline.feed).load(); }
+	
+	home() { @timeline.selectItem(0); }
+	end()  { @timeline.selectItem(@timeline.items.length - 1); }
+
+	findPreviousMention() { @timeline.find('', -1); }
+	findNextMention()     { @timeline.find('', 1);  }
+	findPrevious()        { @timeline.find(#tweetBox.getText(), -1); }
+	findNext()            { @timeline.find(#tweetBox.getText(), 1);  }
+
+	pageUp()   { @timeline.movePage(-1); }
+	pageDown() { @timeline.movePage(1);  }
+
+	fave() {
+		var c = @timeline.getCurrent();
+		if (!c) return;
+		c.record.toggleFave();
+	}
+
+	retweet() {
+		var c = @timeline.getCurrent();
+		if (!c) return;
+		if (c.record.protect && !c.record.retweet) notify ('Warning: Protected Tweet!');
+		if (c.record.dm) notify ('Warning: You are retweeting a DM!');
+		#tweetBox.setText (c.record.getRetweetText());
+		#tweetBox.replyTo (c.record);
+	}
+
+	replyUncheck() {
+		#tweetBox.replyTo (null);
+	}
+
+	reply() {
+
+		var c = @timeline.getCurrent();
+		if (!c) return;
+
+		var record = c.record;
+
+		var myText = #tweetBox.getText();
+
+		if (record.dm) {
+			var prefix = 'd ' + record.user.username + ' ';
+			if (myText.substr(0, prefix.length) != prefix) {
+				#tweetBox.setText(prefix + myText);
+			}
+			return;
+		}
+
+		var next = getNextReplyText(MY_DAMN_NAME, myText, record.user.username, record.text);
+		var match = next.match(/^(@[a-zA-Z0-9_]+)[ ]+@/);
+		if (next == myText && match) {
+			var index = match[1].length;
+			#tweetBox.setText(next.substr(0, index) + ' ' + next.substr(index));
+			#tweetBox.setSelection(index + 1, index + 1);
+		} else {
+			#tweetBox.setText(next);
+		}
+		#tweetBox.replyTo(record);
+
+	}
+
+}
+
+// }
+
+// --tweetbox--
+// represents the box where tweets are entered {
+
+class TweetReq {
+
+	replyTo(id) {
+		@reply = id;
+	}
+	retweet(id) {
+		@retweet = id;
+	}
+	setProgress(pg) {
+		@pg = pg;
+	}
+	setText(text) {
+		@text = text;
+	}
+	getText()     @text;
+	getReply()    @reply;
+	getRetweet()  @retweet;
+	oncomplete(response) {
+	}
+	onfail(reason) {
+	}
+	send() {
+		var replyParam = '';
+		if (@reply != null) {
+			replyParam = '&irp=' + @reply;
+		} else if (@retweet != null) {
+			replyParam = '&rtto=' + @retweet;
+		}
+		var xh = new XH('POST', API_POST + '?time=' + (new Date().getTime()) + Capabilities.echoParam() + xtra_secure);
+		xh.setProgress(@pg);
+		xh.oncomplete = this::oncomplete;
+		xh.sendForm('value=' + encodeURIComponent(@text) + #geo.getParam() + replyParam + '&tk=' + THE_TOKEN);
+	}
+
+}
+
+class TweetProc {
+
+	handleRecord(record) {
+		if (@retweet && xtra_timeline === '') {
+			#mainTimeline.addRecord(record);
+		}
+	}
+
+	onsuccess(data, record) {
+	}
+
+	sent(response) {
+		try {
+			var data = T.parseJSON(response);
+			if (data.redirect !== undefined) {
+				@pg.fail('Authentication Needed');
+				location.replace(data.redirect);
+				return;
+			}
+			if (data.id_str) {
+				var record = Tweet.addTweet(data);
+
+				// hackish coupling!
+				#tweetBox.setLatest(record);
+
+				this.handleRecord(record);
+				this.onsuccess(data, record);
+				var eea = PREF('evenMoarAwesomeThings');
+				@pg.ok('<span style="color: #7f7" ' + (eea === '1' ? '' : 'onclick="this.innerHTML=\'' + data.user.statuses_count + '\'"') + '><b>Success.</b> Your tweet has been sent.</span>');
+				if (eea === '1') {
+					SplashNoti.show('<span style="font-size: 2.3em;font-weight:bold">' + data.user.statuses_count + '</span>');
+				}
+				if (PREF('refreshOnTweet') != '0' && !#mainTimeline.feed.isStreaming()) {
+					#mainTimeline.feed.load();
+				}
+			} else {
+				throw new Error('ah');
+			}
+		} catch (e) {
+			if (response.indexOf('<h3>Guru Meditation:</h3>') > -1) {
+				this.onfail('<b>Server down!</b> I\'m sorry. Please try again later.');
+			} else if (response.indexOf('OVERCAPACITY!!!111') > -1 || response.indexOf('<h2>Twitter is over capacity.</h2>') > -1) {
+				this.onfail('<span style="color: #f77"><b>Twitter is Over Capacity.</b> It\'ll be back shortly I hope.</span>');
+			} else {
+				this.onfail('<b>There is an error</b> because of some reason.');
+			}
+			this.sendHint();
+			throw e;
+		}
+	}
+
+	onfail(reason) {
+		@pg.fail ('<span style="color: #f77">' + reason + '</span>');
+	}
+
+	sendHint() {
+		if (!@hintSent) {
+			@hintSent = true;
+			notify('Hint: Use Ctrl+Z to recover your tweet.');
+		}
+	}
+
+	send(v, replying) {
+		var progressText = 'Sending Tweet...';
+		@req = new TweetReq();
+		if (replying) {
+			if (v === replying.getRetweetText() && !replying.dm && (!replying.protect || replying.retweet)) {
+				var id = ((replying.protect && replying.retweet) ? replying.retweet.id : replying.id);
+				progressText = 'Retweeting ' + replying.user.username + '...';
+				@retweet = id;
+				@req.retweet(id);
+			} else if (replying.check()) {
+				progressText = 'Replying ' + replying.user.username + '...';
+				@reply = replying.id;
+				@req.replyTo(@reply);
+			}
+			replying.uncheck();
+		}
+		@text = v;
+		@pg = new Progress(progressText);
+		@req.setText(@text);
+		@req.setProgress(@pg);
+		@req.oncomplete = this::sent;
+		@req.onfail = this::onfail;
+		@req.send();
+	}
+
+}
+
+class TweetBox {
+
+	init() {
+		
+		@element = el.tweetData;
+		@hintSent = false;
+		@latest = null;
+
+		@element.onkeydown  = this::delayedCheckTyping;
+		@element.onkeypress = this::delayedCheckTypingPress;
+		@element.onkeyup    = this::delayedCheckTyping;
+
+		this.keyHandler = new TweetBoxKeyHandler(this);
+		this.checkLength();
+
+	}
+
+	delayedCheckTyping() {
+		clearTimeout(@checkTimer);
+		@checkTimer = setTimeout(this::checkTyping, 0);
+	}
+
+	delayedCheckTypingPress(e) {
+		this.delayedCheckTyping();
+		setTimeout(function() {
+			this.checkCharacter(e);
+		}.b(this), 0);
+	}
+
+	focus() { @element.focus(); }
+	blur()  { @element.blur(); }
+
+	getText()  @element.value;
+	
+	setText(x) {
+		@element.value = x;
+		this.checkLength();
+	}
+
+	isEmpty()  @element.value.length == 0;
+	hasSelectedText()  @element.selectionStart != @element.selectionEnd;
+	getTextBeforeSelection()  @element.value.substr(0, @element.selectionStart);
+	getTextAfterSelection()  @element.value.substr(@element.selectionEnd);
+
+	setSelection(start, end) {
+		@element.selectionStart = start;
+		@element.selectionEnd = end;
+	}
+
+	replaceTextBeforeSelection(count, replaceWith) {
+		var oldStart = @element.selectionStart, oldEnd = @element.selectionEnd,
+			newStart = Math.max(0, oldStart - count) + replaceWith.length,
+			newEnd = oldEnd - oldStart + newStart,
+			oldValue = @element.value;
+		@element.value = oldValue.substr(0, Math.max(0, oldStart - count)) + replaceWith + oldValue.substr(oldStart);
+		@element.selectionStart = newStart;
+		@element.selectionEnd = newEnd;
+	}
+
+	insertAtCursor(x, addWhitespace) {
+		var oS = @element.selectionStart;
+		var oE = @element.selectionEnd;
+		var b  = @element.value.substr(0, oS);
+		var e  = @element.value.substr(oE);
+		var cSel = @element.value.substr(oS, oE - oS);
+		if (addWhitespace && b.match(/\S$/)) x = ' ' + x;
+		if (addWhitespace && e.match(/^\S/)) x = x + ' ';
+		@element.value = b + x + e;
+		@element.selectionStart = @element.selectionEnd = oE - cSel.length + x.length;
+		this.checkLength();
+	}
+
+	replyTo(record) {
+		if (@replying) {
+			@replying.uncheck();
+		}
+		@replying = record;
+		if (@replying) {
+			@replying.check();
+		}
+	}
+
+	setLatest(record) {
+		@latest = record;
+	}
+
+	isReplying() !!@replying && @replying.check();
+	isRetweeting() @replying && this.getText() == @replying.getRetweetText();
+
+	getNormalizedLength(text) {
+		var deduct = 0;
+		text = text.replace(TWITTER_REGEX.url, function(a, b, c, d, e) {
+			deduct += e == 'https://' ? TWITTER_CONFIG.short_url_length_https : TWITTER_CONFIG.short_url_length;
+			return c;
+		});
+		return text.length + deduct;
+	}
+
+	checkLength() {
+		var length = this.getNormalizedLength(@element.value);
+		#tweetState.setSwitch('empty',      length === 0);
+		#tweetState.setSwitch('full',       length >= 140, true);
+		#buttonsBar.setOffset(@element.scrollWidth - @element.offsetWidth);
+		el.status.chars.innerHTML = #zzzKeyHandler.shouldHintUser() ? 140 : (140 - length);
+		if (@replying) @replying.check();
+	}
+
+	checkTyping() {
+		this.checkLength();
+	}
+
+	checkCharacter() {
+	}
+
+	send() {
+		@latestInfo = {
+			text: this.getText(),
+			replying: @replying
+		};
+		new TweetProc().send(this.getText(), @replying);
+		@replying = null;
+		this.setText('');
+		this.revertToTemplate()
+	}
+
+	revertToTemplate() {
+		var template = PREF('tweetTemplate');
+		var pos = 0
+		this.setText(template.replace(/%s/, function(all, index) {
+			pos = index
+			return ''
+		}));
+		this.setSelection(pos, pos);
+	}
+
+	undo() {
+		if (@latest != null && @latestInfo != null) {
+			if (confirm('Delete your latest tweet?\n\n" ' + @latest.text + ' "')) {
+				new DeleteProc(@latest).send();
+			}
+		} else {
+			notify('Cannot undo tweet!');
+		}
+	}
+	removeDone() {
+		if (@latest != null && @latestInfo != null) {
+			@replying = @latestInfo.replying;
+			this.setText(@latestInfo.text);
+			@latest = null;
+			@latestInfo = null;
+		}
+	}
+
+}
+
+class DeleteProc {
+
+	init(id) {
+		@record = id;
+	}
+	oncomplete() {
+		@record.remove();
+		#tweetBox.removeDone();
+	}
+	send() {
+		var xh = new XH('POST', #config.api.rmtweet + '?time=' + (new Date().getTime()) + Capabilities.echoParam() + xtra_secure);
+		var complete = this::oncomplete;
+		var pg = new Progress('Removing tweet...');
+		xh.setProgress(@pg);
+		xh.oncomplete = function() {
+			pg.ok('Removed!');
+			complete();
+		};
+		xh.sendForm('id=' + encodeURIComponent(@record.id) + '&tk=' + THE_TOKEN);
+	}
+
+}
+
+// }
+
+// --holdscroller--
+// handles timeline scrolling when the arrow keys are held {
+
+class HoldScroller {
+
+	init(timeline) {
+		@timeline = timeline;
+		@scrolling = false;
+		@started = false;
+		@timer = 0;
+		@direction = 0;
+		@lastTime = 0;
+	}
+
+	getScrollDelta() {
+		var now = new Date().getTime();
+		var delta = Math.max(1, Math.ceil((now - @lastTime) * 0.35));
+		@lastTime = now;
+		return delta;
+	}
+
+	holdScroll() {
+		var position  = @timeline.getScrollPos(),
+			delta     = this.getScrollDelta(),
+			direction = @direction,
+			next      = direction > 0 ? position + delta : position - delta;
+		@timeline.setScrollPos (next);
+		this.next();
+		clearTimeout(@timer);
+		@timer = setTimeout(this.holdScroll.b(this), 20);
+	}
+
+	next() {
+		var direction = @direction,
+			visible   = @timeline.getVisibleArea(),
+			nextItem  = @timeline.items[@timeline.getCurrent().index + (direction > 0 ? 1 : -1)],
+			move      = false;
+		if (nextItem) {
+			var t = nextItem.getPosition(),
+				b = t + nextItem.getHeight();
+			move = direction > 0 ? b < visible.bottom : t > visible.top;
+			if (move) @timeline.selectItem(nextItem.index, true);
+		}
+		return move;
+	}
+
+	scroll() {
+		clearTimeout(@timer);
+		if (!this.next()) {
+			@lastTime = new Date().getTime();
+			@scrolling = true;
+			@timer = setTimeout(this.holdScroll.b(this), 20);
+		} else {
+			@timer = setTimeout(this.scroll.b(this), 100);
+		}
+	}
+
+	startHoldScroll(direction) {
+		if (!@started || direction != @direction) {
+			@direction = direction;
+			@started = true;
+			@timeline.moveItem(direction);
+			clearTimeout(@timer);
+			@timer = setTimeout(this.scroll.b(this), 300);
+		}
+	}
+
+	stopHoldScroll(direction) {
+		@started = false;
+		@scrolling = false;
+		clearTimeout(@timer);
+	}
+
+	isScrolling()  @scrolling;
+
+}
+
+// }
+
+// --autoscroller--
+// handles scrolling when new items are loaded
+
+class AutoScroller {
+
+	init(timeline) {
+		@timeline = timeline;
+		@timer = 0;
+		this.attachTimer();
+	}
+
+	styles = {};
+	register = implementable('styles');
+	
+	attachTimer() {
+		var that = this;
+		@timeline.implement({
+			select: function() {
+				that.stopTimer();
+				return super;
+			},
+			endChangeset: function() {
+				var retval = super;
+				that.autoScroll();
+				return retval;
+			}
+		});
+	}
+
+	autoScroll() {
+		var style = PREF('autoScrollOnRefresh');
+		this.stopTimer();
+		if (style in this.styles) {
+			this.styles[style].call(this);
+		} else if (style != '0') {
+			this.defaultStyle();
+		}
+	}
+
+	defaultStyle() {
+		@timer = setTimeout(function() {
+			@timeline.selectItem(@timeline.items.length - 1);
+		}.b(this), 1000);
+	}
+
+	stopTimer() {
+		clearTimeout(@timer);
+	}
+
+} .register({
+
+	smarter: function() {
+		@timer = setTimeout(function() {
+			if (#tweetBox.getText() != '')
+				return;
+			if (!@timeline.items.length)
+				return;
+			var timeline = @timeline,
+				last = timeline.getCurrent().index;
+			for (var i = last + 1; i < timeline.items.length; last = i++) {
+				if (timeline.items[i].record.mention) {
+					break;
+				}
+			}
+			timeline.selectItem(last);
+		}.b(this), 2000);
+	}
+
+});
+
+
+// }
+
+
+
+// --base-keys--
+// base key handler class {
+
+class KeyHandler {
+	
+	@bindings = {};
+
+	register = implementable('_bindings');
+
+	keyDown(kc, e) {
+		if (e.ctrlKey && @bindings) {
+			if (e.altKey && typeof @bindings['A' + kc] === 'function') {
+				@bindings['A' + kc].call(this);
+				return false;
+			}
+			if (typeof @bindings[kc] === 'function') {
+				@bindings[kc].call(this);
+				return false;
+			}
+		}
+	}
+
+}
+
+// }
+
+// --zzz--
+// &$*#(&%*(&%*($()*()*@()#*()$*&%^^&^&^&^&^&&^#@^#%@^@#^&@#^&@#^&%#*(#()()+++++ {
+
+class ZzzKeyHandler extends KeyHandler {
+
+	@keyCodes = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65, 13];
+	
+	init() {
+		@howFar = 0;
+		@mode = 0;
+		@mode2 = undefined;
+	}
+
+	isReady()         @howFar >= @keyCodes.length;
+	shouldHintUser()  @howFar === @keyCodes.length - 1;
+
+	keyDown(kc, e) {
+		if (kc == @keyCodes[@howFar]) {
+			@howFar ++;
+		} else {
+			@howFar = 0;
+		}
+		if (this.isReady()) {
+			var classNames = ['', 'kinamo'];
+			@mode ++;
+			document.body.className = 'body ' + classNames[@mode % classNames.length];
+			if (classNames[@mode % classNames.length] === '') {
+				if (@mode2 === undefined) {
+					@mode2 = parseInt(PREF('evenMoarAwesomeThings'), 10);
+				}
+				@mode2 = (@mode2 + 1) % 2;
+				PREF('evenMoarAwesomeThings=' + @mode2);
+				SplashNoti.show ('\'w\' /');
+			}
+			#tweetBox.setText('');
+			return false;
+		}
+		return super(kc, e);
+	}
+
+} .register({
+
+	'77':  function() { notify.vhsifnweihdunsdfux(); },
+	'188': function() { Progress.vhsifnweihdunsdfux(); }
+
+});
+
+// }
+
+// --tb-keys--
+// key handlers for the tweet box {
+
+class TweetBoxKeyHandler extends KeyHandler {
+
+	init(tweetBox) {
+		@tweetBox = tweetBox;
+	}
+
+	keyDown(kc, e) {
+
+		// 17=ctrl 224=command
+		if (kc != 17 && kc != 224 && !e.ctrlKey && !e.metaKey) {
+			@tweetBox.focus();
+		}
+
+		// paste / undo
+		if ((e.ctrlKey || e.metaKey) && (kc == 86 || kc == 90)) {
+			@tweetBox.focus();
+		}
+
+		// send tweet
+		if (kc == 13) {
+			if (@tweetBox.getText() != '') {
+				@tweetBox.send ();
+				return false;
+			}
+		}
+	
+	}
+
+}
+
+// }
+
+// --tl-keys--
+// key handlers specific to the timeline
+class TimelineKeyHandler extends KeyHandler {
+
+	init(timeline) {
+		@timeline = timeline;
+	}
+
+	openLink(e) {
+		var c = @timeline.getCurrent();
+		if (!c) return false;
+		var el = c.getElement().querySelector('.status-text span[data-tw-url]');
+		if (el) {
+			var url = PREF('skipTCo') == '1' && el.hasAttribute('data-tw-url2') ? el.getAttribute('data-tw-url2') : el.getAttribute('data-tw-url');
+			UrlHandler.handle(unescape(url), e);
+			return true;
+		}
+		return false;
+	}
+
+	enterDefault(kc, e) {
+		notify('Nothing to send.');
+	}
+
+	enter(kc, e) {
+		if (!this.openLink(e)) {
+			return this.enterDefault();
+		}
+	}
+
+	keyDown(kc, e) {
+
+		// enter (this will be called after tweetbox handler)
+		if (kc == 13) {
+			this.enter(kc, e);
+			return false;
+		}
+
+		// move up/down
+		var isEmpty = #tweetBox.isEmpty();
+		if (isEmpty || e.ctrlKey) {
+			if (kc == 38) {
+				if (e.shiftKey) {
+					@timeline.cmd.findPreviousMention();
+				} else {
+					@timeline.holdScroller.startHoldScroll(-1);
+				}
+				return false;
+			}
+			if (kc == 40) {
+				if (e.shiftKey) {
+					@timeline.cmd.findNextMention();
+				} else {
+					@timeline.holdScroller.startHoldScroll(1);
+				}
+				return false;
+			}
+		}
+
+		// from now on, leave the shift key alone!
+		if (e.shiftKey) {
+			return true;
+		}
+
+		// home and end
+		if (isEmpty) {
+			if (kc == 35 && !e.ctrlKey) {
+				@timeline.cmd.end();
+				return false;
+			}
+			if (kc == 36 && !e.ctrlKey) {
+				@timeline.cmd.home();
+				return false;
+			}
+		}
+
+		// page up / page down
+		if (kc == 33) {
+			@timeline.cmd.pageUp();
+			return false;
+		}
+		if (kc == 34) {
+			@timeline.cmd.pageDown();
+			return false;
+		}
+		
+		return super(kc, e);
+
+	}
+
+	keyUp(kc, e) {
+		if (kc == 38 || kc == 40) {
+			@timeline.holdScroller.stopHoldScroll();
+			return false;
+		}
+	}
+
+} .register({
+
+	'82': function()  { @timeline.cmd.reload (); },      // R
+	'69': function()  { @timeline.cmd.fave(); },         // E
+	'84': function()  { @timeline.cmd.retweet(); },      // T
+	'89': function()  { @timeline.cmd.reply(); },        // Y
+	'A89': function() { @timeline.cmd.replyUncheck(); }, // Alt+Y
+	'70': function()  { @timeline.cmd.findPrevious(); }, // F
+	'71': function()  { @timeline.cmd.findNext(); }      // G
+
+});
+
+// }
+
+// --gb-cmd--
+// global commands {
+
+class GlobalCommands {
+
+	uploadImage() {
+		notify('To upload an image, drag them into thaiWitter.');
+	}
+	shortenURLs() {
+		new UrlShortener().shortenTweetBox();
+	}
+
+	editHighlightKeywords() {
+		var keywords = prompt('Highlighted keywords (separated by space):', #highlighter.keywords);
+		if (keywords === null) return;
+		#highlighter.setKeywords(keywords);
+	}
+	editTemplate() {
+		var template = prompt('Enter template [%s = initial cursor position]', PREF('tweetTemplate'));
+		if (template === null) return;
+		PREF('tweetTemplate=' + template);
+		#tweetBox.revertToTemplate();
+	}
+
+	editFilterKeywords() {
+		var keywords = prompt('Excluded keywords (separated by space):\n\nTip: source:xxxxxx matchs tweets from source xxxxxx.\nfrom:xxxxxx matchs tweets from @xxxxxx.', #filter.keywords);
+		if (keywords === null) return;
+		#filter.setKeywords(keywords);
+	}
+
+	newMentionsWindow() { pwns('?mode=mentions'); }
+	newHomeTimelineWindow() { pwns('?mode=home'); }
+	newDMsWindow()      { pwns('?mode=dms'); }
+	newFavesWindow()    { pwns('?mode=faves'); }
+
+	newSearchWindow() {
+		var q = prompt('Search query?');
+		if (q !== null && q !== '') {
+			pwns ('?q=' + encodeURIComponent(q));
+		}
+	}
+
+	newUserWindow() {
+		var q = prompt('Please enter username or username/listname');
+		if (q !== null && q !== '') {
+			pwns ('?u=' + encodeURIComponent(q));
+		}
+	}
+
+	logout() {
+		new ReloginProc(false);
+	}
+	undoTweet() {
+		#tweetBox.undo();
+	}
+
+}
+
+// }
+
+// --gb-keys--
+// global key handlers {
+
+class GlobalKeyHandler extends KeyHandler .prototype.register({
+
+	'A72': function() { #commands.editHighlightKeywords(); }, // Alt+H
+	'A84': function() { #commands.editTemplate(); }, // Alt+T
+	'A90': function() { setTimeout(#commands::undoTweet, 1); }, // Alt+Z
+	'73':  function() { #commands.uploadImage (); }, // I
+
+	'72':  function() { setTimeout(#commands::newSearchWindow, 1); }, // H
+	'85':  function() { setTimeout(#commands::newUserWindow, 1); },   // U
+	'79':  function() { #commands.newHomeTimelineWindow(); },         // O
+	'78':  function() { #commands.newMentionsWindow(); },             // N
+	'190': function() { #commands.newDMsWindow(); }                   // .
+
+});
+
+// }
+
+// --handler--
+// main event handlers {
+
+function cancelEvent(e) {
+	e.stopPropagation ();
+	e.preventDefault ();
+}
+
+class EventHandler {
+
+	// handler setups
+	init() {
+		window.addEventListener ('DOMMouseScroll', this::globalWheel, false);
+		window.addEventListener ('mousewheel',     this::globalWheelWebkit, false);
+		window.addEventListener ('resize',         this::globalResize, false);
+		this.setupMenu();
+		this.setupWheel();
+		this.resizeHandlers = [];
+		@resizing = false;
+		@resizingDisabled = false;
+	}
+
+	getResizingDisabled()  @resizingDisabled;
+	setResizingDisabled(t) {
+		@resizingDisabled = t;
+	}
+
+	setKeyHandlers(keyHandlers) {
+		if (!@keyHandlers) {
+			window.addEventListener ('keydown',        this::globalKeyDown, false);
+			window.addEventListener ('keyup',          this::globalKeyUp, false);
+		}
+		@keyHandlers = keyHandlers;
+	}
+
+	setupMenu() {
+		$('menu-refresh').onclick    = function() { #timeline.cmd.reload (); };
+		$('menu-fave').onclick       = function() { #timeline.cmd.fave (); };
+		$('menu-retweet').onclick    = function() { #timeline.cmd.retweet (); };
+		$('menu-reply').onclick      = function() { #timeline.cmd.reply (); };
+		$('menu-hlwords').onclick    = function() { #commands.editHighlightKeywords (); };
+		$('menu-ftwords').onclick    = function() { #commands.editFilterKeywords (); };
+		$('menu-additional').onclick = function() { optsNew.toggle (); };
+		$('menu-logout').onclick     = function() { #commands.logout (); };
+		$('menu-image').onclick      = function() { #commands.uploadImage (); };
+
+		// new window buttons
+		$('new-mentions').onclick = function() { #commands.newMentionsWindow(); };
+		$('new-home').onclick     = function() { #commands.newHomeTimelineWindow(); };
+		$('new-dms').onclick      = function() { #commands.newDMsWindow(); };
+		$('new-fav').onclick      = function() { #commands.newFavesWindow(); };
+		$('new-search').onclick   = function() { #commands.newSearchWindow(); };
+		$('new-userlist').onclick = function() { #commands.newUserWindow(); };
+	}
+
+	setupWheel() {
+		@cumulativeDelta = 20;
+	}
+
+	globalWheel(e) {
+		var delta = e.detail;
+		#timeline.moveScroll(delta > 0 ? 1 : -1);
+	}
+
+	globalWheelWebkit(e) {
+		@cumulativeDelta += 'wheelDeltaY' in e ? e.wheelDeltaY : e.wheelDelta;
+		if (@cumulativeDelta >= 40) {
+			while (@cumulativeDelta >= 40) @cumulativeDelta -= 40;
+			#timeline.moveScroll(-1);
+		} else if (@cumulativeDelta < 0) {
+			while (@cumulativeDelta < 0) @cumulativeDelta += 40;
+			#timeline.moveScroll(1);
+		}
+	}
+
+	// if false is returned, cancel event and that's it
+	// if true is returned, run default behaviour and that's it
+	// else, check the next handler
+	decide(e, r) {
+		if (r === false) {
+			cancelEvent(e);
+		}
+		return r === false || r === true;
+	}
+
+	processKeyHandlerQueue(eventType, kc, e) {
+		var l = @keyHandlers.length, c;
+		for (var i = 0; i < l; i ++) {
+			c = @keyHandlers[i];
+			if (typeof c == 'function') c = c();
+			if (c[eventType]) {
+				if (this.decide(e, c[eventType](kc, e))) return;
+			}
+		}
+	}
+	globalKeyDown(e)  this.processKeyHandlerQueue('keyDown', e.keyCode, e);
+	globalKeyUp(e)    this.processKeyHandlerQueue('keyUp',   e.keyCode, e);
+
+	globalResize() {
+		if (@resizing) return;
+		if (@resizingDisabled) return;
+		@resizing = true;
+		el.display.style.paddingTop = Math.max(50, window.innerHeight / 1.5) + 'px';
+		el.display.style.paddingBottom = Math.max(50, window.innerHeight / 1.5) + 'px';
+		for (var i = 0; i < this.resizeHandlers.length; i ++) {
+			this.resizeHandlers[i]();
+		}
+		setTimeout(function() { @resizing = false; }.b(this), 1); // nasty safari bug
+	}
+	globalResizeDelayed() {
+		setTimeout(this::globalResize, 1);
+	}
+
+}
+
+// }
+
+
+
+// --highlighter--
+// {
+
+class StatusHighlighter {
+
+	init() {
+		this.setKeywords(PREF('hlKeywords'));
+	}
+
+	setKeywords(keywords) {
+		this.check = this.compile(keywords);
+		this.keywords = keywords;
+		PREF('hlKeywords=' + this.keywords);
+		var all = Tweet.getAllTweets();
+		for (var i = 0; i < all.length; i ++) all[i].reHighlight();
+	}
+
+	compile(keywords) {
+		var n = ('' + keywords).match(/\S+/g);
+		if (!n) return function() { return false; };
+		var list = [];
+		for (var i = 0; i < n.length; i ++) {
+			var c = n[i].toLowerCase();
+			list.push (c);
+		}
+		return function(text) {
+			text = ' ' + text.replace(/\s+/g, ' ').toLowerCase() + ' ';
+			for (i = 0; i < list.length; i ++) {
+				if (text.indexOf(list[i]) != -1) return 1;
+			}
+			return 0;
+		};
+	}
+
+}
+
+// }
+
+// --filter--
+// {
+
+class StatusFilter {
+
+	init() {
+		this.setKeywords(PREF('ftKeywords'));
+	}
+
+	setKeywords(keywords) {
+		this.check = this.compile(keywords);
+		this.keywords = keywords;
+		PREF('ftKeywords=' + this.keywords);
+		#mainTimeline.reFilter();
+	}
+
+	compile(keywords) {
+		var n = ('' + keywords).match(/\S+/g);
+		if (!n) return function() { return false; };
+		var list = [];
+		for (var i = 0; i < n.length; i ++) {
+			list.push (this.compileSubfunction(n[i]));
+		}
+		return function(text, record) {
+			if (!record.loaded) return false;
+			if (record.mention) return false;
+			for (var i = 0; i < list.length; i ++) {
+				if (list[i](text, record)) return true;
+			}
+			return false;
+		};
+	}
+
+	compileSubfunction(keyword) {
+		var match;
+		var negate = false;
+		var property = 'text';
+		keyword = keyword.toLowerCase();
+		if ((match = keyword.match(/^(-?)(([a-z0-9_]+):)?([\s\S]+)$/))) {
+			negate = match[1] === '-';
+			property = match[3] ? match[3] : 'text';
+			keyword = match[4];
+		}
+		return function(text, record) {
+			var match = ((record.getProperty(property)).toLowerCase().indexOf(keyword) > -1);
+			return match ? !negate : negate;
+		};
+	}
+
+}
+
+// }
+
+
+
+// --options--
+// {
+
+// options popup show/hide
+var optsNew = {
+	el: document.getElementById('options'),
+	ef: document.getElementById('options-floater'),
+	mn: document.getElementById('menu-additional'),
+	mode: 0,
+	position: 0,
+	animation: null,
+	animate: function(target) {
+		if (optsNew.animation) {
+			optsNew.animation();
+			delete optsNew.animation;
+		}
+		optsNew.animation = dtjs2.a.c(optsNew.position, target, 0.3, optsNew.frame, function(v) {
+			return 1 - Math.pow(1 - v, 4);
+		});
+	},
+	show: function() {
+		if (optsNew.mode === 0) {
+			optsNew.animate(1);
+			optsNew.el.style.top = (el.head.offsetTop + el.head.offsetHeight - 1) + 'px';
+			optsNew.mn.className = 'menu-item menu-item-open';
+			optsNew.mode = 1;
+		}
+	},
+	frame: function(v) {
+		optsNew.position = v;
+		if (v === 0) {
+			optsNew.el.style.visibility = 'hidden';
+		} else {
+			optsNew.el.style.visibility = 'visible';
+		}
+		optsNew.ef.style.top = (-optsNew.ef.offsetHeight * (1 - v)) + 'px';
+	},
+	hide: function() {
+		if (optsNew.mode == 1) {
+			optsNew.animate(0);
+			optsNew.mn.className = 'menu-item';
+			optsNew.mode = 0;
+		}
+	},
+	toggle: function() {
+		optsNew[optsNew.mode ? 'hide' : 'show']();
+	}
+};
+
+// options tabs manager
+class TabsToggler {
+
+	list = ['option', 'helpme', 'about', 'spwn', 'moar', 'fb'];
+
+	bindings = {};
+	register = implementable('bindings');
+	
+	@selected = undefined;
+
+	setup(id) {
+		var that = this;
+		$('tb' + id).onclick = function() {
+			that.go(id);
+		};
+		this.hide(id);
+	}
+
+	hide(id) {
+		$('tb' + id).className = 'tabls-item';
+		$('td' + id).style.display = 'none';
+	}
+
+	show(id) {
+		$('tb' + id).className = 'tabls-item tabls-item-active';
+		$('td' + id).style.display = 'block';
+	}
+
+	setupComponent() {
+		for (var i = 0; i < this.list.length; i ++) {
+			this.setup(this.list[i]);
+		}
+		this.go(this.list[0]);
+	}
+
+	go(id) {
+		if (@selected !== undefined) this.hide(@selected);
+		this.show(@selected = id);
+		if (this.bindings && this.bindings[id])
+			this.bindings[id]();
+	}
+
+}
+
+// }
+
+// --user-info--
+// displays user info {
+
+class ConnectionChangeProc {
+	init(user, method) {
+		@user = user;
+		@method = method;
+	}
+	setProgress(pg) {
+		@pg = pg;
+	}
+	fire() {
+		@xh = new XH('POST', #config.api.connections + '?time=' + (new Date().getTime()) + xtra_secure);
+		if (@pg) @xh.setProgress(@pg);
+		@xh.oncomplete = this::loaded;
+		@xh.sendForm('tk=' + THE_TOKEN + '&u=' + encodeURIComponent(@user) + '&mode=' + encodeURIComponent(@method));
+	}
+	onload(success) {
+	}
+	loaded(response) {
+		try {
+			var data = T.parseJSON(response);
+			if (data.following != null) {
+				@pg.ok(@method == 'destroy' ? 'Unfollowed' : 'Followed');
+				this.onload(data);
+			} else {
+				throw new Error('not in format i want!');
+			}
+		} catch (e) {
+			@pg.fail('Failed.');
+			this.onload(false);
+		}
+	}
+}
+
+class UserInfoView {
+	init() {
+		@element = $('user-about');
+		@wrapper = $('user-about-padder');
+		@content = $('user-about-text');
+	}
+	hide() {
+		@element.style.display = 'none';
+	}
+	show(user) {
+		@user = user;
+		this.loadUserInfo();
+	}
+	loadUserInfo() {
+		var xh = new XH('GET', #config.api.user + '?time=' + (new Date().getTime()) + '&u=' + encodeURIComponent(@user));
+		xh.oncomplete = this::oncomplete;
+		xh.send();
+	}
+	oncomplete(response) {
+		var data = T.parseJSON(response);
+		this.handleUserInfo(data);
+	}
+	handleUserInfo(data) {
+		var html = '<span class="user-realname"></span>';
+		var link = 'https://twitter.com/';
+		var ftext = 'view full profile';
+		var title = 'user information';
+		var stats = '';
+		var s = function(a, S, P) { return a + ' ' + (a == 1 ? S : P); }
+		if (data.screen_name !== undefined) {
+			link += data.screen_name;
+			stats = ' (' + s(data.statuses_count, 'tweet', 'tweets') + ', ' + s(data.friends_count, 'following', 'following') + ', ' + s(data.followers_count, 'follower', 'followers') + ')';
+		} else {
+			link += ('' + data.uri).substr(1);
+			ftext = 'view list on twitter';
+			title = 'list information';
+			stats = ' (' + s(data.member_count, 'member', 'members') + ', ' + s(data.subscriber_count, 'follower', 'followers') + ')';
+		}
+		var justRender = false;
+		if (!@rendered) {
+			@rendered = true;
+			justRender = true;
+			@nameElement = C('user-realname', 'span');
+			@nameElement.onclick = this::nameClicked;
+			@statsElement = C('user-stats');
+			@bioElement = C('user-bio');
+			@showProfileButton = C('menu-item', 'span');
+			@showProfileButton.onclick = this::showProfile;
+			@followButton = C('menu-item', 'span');
+			@followButton.onclick = this::toggleFollow;
+			@content.appendChild(@nameElement);
+			@content.appendChild(@statsElement);
+			@content.appendChild(@bioElement);
+			@content.appendChild(@showProfileButton);
+			@content.appendChild(@followButton);
+		}
+		@data = data;
+		$('user-about-title').textContent = title;
+		@nameElement.textContent = data.name;
+		@statsElement.textContent = stats;
+		@bioElement.style.display = data.description == '' ? 'none' : 'block';
+		@bioElement.textContent = data.description;
+		@showProfileLink = link;
+		@showProfileButton.textContent = ftext;
+		@followButton.textContent = data.following ? 'unfollow' : 'follow';
+		@followButton.className = 'menu-item ' + (data.following ? 'unfollow-button' : 'follow-button');
+		if (justRender) this.slideIn();
+	}
+	nameClicked() {
+	}
+	showProfile() {
+		open_link(@showProfileLink);
+	}
+	toggleFollow() {
+		var proc = new ConnectionChangeProc(@user, @data.following ? 'destroy' : 'create');
+		var pg = new Progress(@data.following ? 'Unfollowing...' : 'Following...');
+		proc.setProgress(pg);
+		proc.fire();
+		proc.onload = function(data) {
+			if (data) {
+				this.handleUserInfo(data);
+			}
+		}.b(this);
+	}
+	slideIn() {
+		var container = @element, content = @wrapper;
+		dtjs2.a.c(1, 0, 0.8, function(v, f) {
+			container.style.height = 'auto';
+			content.style.marginTop = (-content.offsetHeight * v) + 'px';
+		}, dtjs2.ease.o);
+	}
+}
+
+// }
+
+// --toggles--
+// information toggles {
+
+class InfoToggler implement {
+
+	keys = ['ifirp', 'ifclient'];
+
+	createHandler = function(key) {
+		return function(id, value) {
+			if (value == '0') {
+				#infoToggler.off(key);
+			} else {
+				#infoToggler.on(key);
+			}
+		};
+	};
+
+} prototype implement {
+	
+	init() {
+		this.update();
+	}
+
+	on(key) {
+		PREF(key + '=1');
+		this.update();
+	}
+
+	off(key) {
+		PREF(key + '=0');
+		this.update();
+	}
+
+	update() {
+		var classes = ['tweet-display'];
+		for (var i = 0; i < this.constructor.keys.length; i ++) {
+			var key = this.constructor.keys[i];
+			classes.push(PREF(key) != '0' ? key + 'on' : key + 'off');
+		}
+		el.display.className = classes.join(' ');
+	}
+
+}
+
+// }
+
+
+
+// --selectliek--
+// thaiWitter styled select boxes {
+function selectLiek(choices, renderTo) {
+
+	// Elements
+	function C(cl) {
+		return 'selectliek-' + cl.split(' ').join(' selectliek-');
+	}
+	function D(cl) {
+		var e = document.createElement('div');
+		e.className = C(cl);
+		return e;
+	}
+
+	function findt(obj) {
+		var x = 0;
+		for (; obj; obj = obj.offsetParent) {
+			x += obj.offsetTop;
+		}
+		return x;
+	}
+
+	// Animation
+	var mode = 0;
+	var animValues = [0, 0, 0, 0];
+	var animInterval = 0;
+	var curChoice = 0;
+	var animFire = false;
+	function animate(target) {
+		var old = animValues.slice();
+		var count = 0;
+		var total = 25;
+		function frame() {
+			count ++;
+			var v = count / total;
+			if (v >= 1) {
+				v = 1; clearInterval(animInterval);
+				if (mode === 0) renderTo.className = C('container closed');
+				if (animFire !== false) {
+					setTimeout (function() {
+						animFire ();
+						animFire = false;
+					}, 200);
+				}
+			}
+			var vv = 1 - Math.pow(1 - v, 2);
+			for (var i = 0; i < target.length; i ++) {
+				if (!old[i]) old[i] = 0;
+				animValues[i] = old[i] + (target[i] - old[i]) * vv;
+			}
+			onAnimation (animValues);
+		}
+		clearInterval(animInterval);
+		animInterval = setInterval(frame, 10);
+	}
+	function onAnimation(v) {
+		var style = {};
+		style.width = Math.round(Math.max(0, v[0])) + 'px';
+		style.height = Math.round(Math.max(0, v[1])) + 'px';
+		style.top = Math.round(v[3]) + 'px';
+		style.marginBottom = (26 - Math.round(Math.max(0, v[1]))) + 'px';
+		var ns = '';
+		for (var i in style) {
+			ns += i.replace(/[A-Z]/g, function(a) { return '-' + a.toLowerCase(); }) + ':' + style[i] + ';';
+		}
+		renderTo.setAttribute ('style', ns);
+		inside.style.position = 'relative';
+		inside.style.top = -Math.round(Math.max(0, v[2])) + 'px';
+	}
+
+	// Generation
+	var r = {};
+	var ch = [];
+	renderTo.className = C('container');
+	var inside = D('inside');
+	renderTo.appendChild (inside);
+	renderTo.onclick = function(e) {
+		if (mode === 0) {
+			var tp = -ch[curChoice].el.offsetTop;
+			var act = findt(renderTo) + tp;
+			var nx = Math.max(el.head.offsetHeight + 3, act);
+			tp -= act - nx;
+			animate ([ renderTo.scrollWidth, renderTo.scrollHeight, 0, tp ]);
+			renderTo.className = C('container open');
+			mode = 1;
+			try {
+				e.stopPropagation ();
+				e.preventDefault ();
+			} catch (err) {}
+		}
+	};
+	function genChoice(value, text) {
+		var ob = {};
+		ob.value = value;
+		ob.text = text;
+		var el = D('choice');
+		var tx = D('text');
+		tx.innerHTML = text;
+		el.appendChild (tx);
+		ob.el = el;
+		ob.tx = tx;
+		ch.push (ob);
+		var id = ch.length - 1;
+		el.onclick = function(e) {
+			if (mode == 1) {
+				var last = curChoice;
+				r.selectChoice (id);
+				if (last != id)
+					animFire = (function() {
+						if (r.onchange) r.onchange (id, value, last);
+					});
+				try {
+					e.stopPropagation ();
+					e.preventDefault ();
+				} catch (err) {}
+			}
+		};
+		inside.appendChild (el);
+	}
+	for (var i in choices) {
+		genChoice (i, choices[i]);
+	}
+	animValues = [ renderTo.offsetWidth, renderTo.offsetHeight, 0 ];
+	r.selectChoice = function(i) {
+		var target = [ ch[i].tx.offsetWidth, ch[i].el.offsetHeight, ch[i].el.offsetTop, 0 ];
+		curChoice = i;
+		renderTo.className = C('container open');
+		for (var idx = 0; idx < ch.length; idx ++) {
+			ch[idx].el.className = C(idx == i ? 'choice choice-select' : 'choice');
+		}
+		mode = 0;
+		animate (target);
+	};
+	r.selectChoiceByValue = function(value) {
+		for (var idx = 0; idx < ch.length; idx ++) {
+			if (ch[idx].value == value) return r.selectChoice (idx);
+		}
+	};
+	r.selectChoice (0);
+	r.choices = ch;
+	return r;
+
+}
+
+// }
+
+// --splashnoti--
+// splashy notifications {
+
+var SplashNoti = function() {
+	var el = document.getElementById('spnt-text');
+	var inr = document.getElementById('spnt-inner');
+	var tmr = 0;
+	var max = 10;
+	var cur = max;
+	var queue = [];
+	var running = 0;
+			var match = navigator.userAgent.match(/rv:([\d]+)\.([\d]+)\.([\d]+)/), cool = match && (match[1] > 1 || (match[1] == 1 && match[2] == 9 && match[3] >= 1));
+	function gts(i) {
+		var a = (1 - i) * 15;
+		var b = 6 + 2 * a;
+		if (cool)
+			return '0 0 ' + a + 'px #ffffff, 0 1px ' + b + 'px #000000';
+		return '0 1px ' + b + 'px #000000';
+	}
+	el.onclick = function() {
+		clearTimeout (tmr);
+		fadeOut ();
+	};
+	function enqueue(text) {
+		queue.push (text);
+		if (!running) {
+			dequeue ();
+		}
+	}
+	function dequeue() {
+		if (queue.length > 0) {
+			running = 1;
+			start (queue.shift());
+		}
+	}
+	function start(text) {
+		clearTimeout (tmr);
+		inr.innerHTML = text;
+		el.style.opacity = '1';
+		el.style.filter = '';
+		el.style.textShadow = gts(1);
+		el.style.display = 'block';
+		el.style.transform = el.style.WebkitTransform = el.style.MozTransform = '';
+		cur = max;
+		tmr = setTimeout(fadeOut, 1500);
+	}
+	function fadeOut() {
+		cur --;
+		if (cur > 0) {
+			tmr = setTimeout(fadeOut, 30);
+		} else {
+			el.style.display = 'none';
+			running = 0;
+			dequeue ();
+		}
+		var v = 1 - Math.pow(1 - cur / max, 2);
+		el.style.filter = 'alpha(opacity=' + Math.round(v * 100) + ')';
+		el.style.opacity = v;
+		el.style.transform = el.style.WebkitTransform = el.style.MozTransform = 'translate(0, ' + (1 - v) * 30 + 'px) scale(' + (v * 0.4 + 0.6) + ')';
+		el.style.textShadow = gts(v);
+	}
+	if (cool) el.className += ' spn-cool';
+	return {
+		show: enqueue
+	};
+}();
+
+// }
+
+// --options-gui--
+// initializes the gui for the options {
+
+class OptionBox {
+
+	init(options) {
+		@options = options;
+		if (!@options.visible || @options.visible()) {
+			this.render();
+		}
+		if (@options.init) {
+			@options.init();
+		}
+	}
+
+	render() {
+		var element = C('selecti');
+		var help = C('span-help', 'span');
+		var container = C('sl-container');
+		help.innerHTML = @options.title;
+		help.title     = @options.description;
+		element.appendChild(help);
+		element.appendChild(document.createTextNode(': '));
+		element.appendChild(container);
+		if (!@options.renderTo) @options.renderTo = 'tdoption';
+		$(@options.renderTo).appendChild(element);
+		this.renderSelectBox(container);
+	}
+
+	renderSelectBox(where) {
+		this.select = selectLiek(@options.options, where);
+		this.select.onchange = this::changed;
+		this.select.selectChoiceByValue(@options.value ? @options.value() : PREF(@options.key));
+	}
+
+	changed(id, value, oldValue) {
+		if (@options.key !== undefined) {
+			PREF(@options.key + '=' + value);
+		}
+		if (@options.validate) {
+			var newValue = @options.validate(id, value, oldValue);
+			if (newValue !== undefined && newValue != value) {
+				value = newValue;
+				if (@options.key !== undefined) {
+					PREF(@options.key + '=' + value);
+				}
+				this.select.selectChoiceByValue(value);
+			}
+		}
+		if (@options.handler) {
+			@options.handler(id, value);
+		}
+	}
+
+}
+
+class OptionsUI {
+
+	loadOptions() {
+		@options = [];
+		for (var i = 0; i < this.constructor.options.length; i ++) {
+			@options.push(new OptionBox(this.constructor.options[i]));
+		}
+	}
+
+}
+
+OptionsUI.ON_OFF = { '0': 'Off', '1': 'On' };
+
+OptionsUI.options = [
+	{
+		title: 'Popup Notification<span id="popup-override-indicator"></span>',
+		description: 'Displays popup notifications on new tweets / mentions. Only available in some platforms.',
+		key: 'sysNotifyMode',
+		options: {
+			'0' : 'Off',
+			'1' : 'On',
+			'2' : 'Only Mentions',
+			'3' : 'Mentions &amp; Highlights',
+			'override': '<span id="popup-override-text">Override</span>'
+		},
+		validate: function(id, value, oldValue) {
+			if ((window.platform === undefined || window.platform.showNotification === undefined) && (window.thaiWitterClientNotify === undefined) && !window.webkitNotifications && value != '0') {
+				notify ('Popup notifications are only available in Mozilla Prism and Google Chrome.');
+				return '0';
+			}
+			if (value == 'override') {
+				#notifier.overridden = !#notifier.overridden;
+				if (#notifier.overridden) {
+					$('popup-override-text').innerHTML = '<b>Override</b>';
+					$('popup-override-indicator').innerHTML = ' <span title="Overridden: Popup notifications will show regardless of the settings.">[O]</span>';
+					notify ('Popup notifications will always be shown for this window.');
+				} else {
+					$('popup-override-text').innerHTML = 'Override';
+					$('popup-override-indicator').innerHTML = '';
+					notify ('Popup notifications override turned off.');
+				}
+				return oldValue;
+			}
+			if (window.webkitNotifications && window.webkitNotifications.checkPermission() !== 0) {
+				var requestPermission = function() {
+					window.webkitNotifications.requestPermission();
+				};
+				notify ('Please enable notifications: <span style="-webkit-appearance: button; color: ButtonText; display: inline-block; padding: 3px 6px" onclick="' + requestPermission.callback() + '()">Click Here</span>');
+			}
+		}
+	},
+	{
+		title: 'Refresh Rate',
+		description: 'How many seconds between each automatic refresh.',
+		key: 'refreshRate',
+		options: {
+			'30' : '30 seconds',
+			'45' : '45 seconds',
+			'60' : '60 seconds',
+			'75' : '75 seconds',
+			'90' : '90 seconds',
+			'120' : '2 minutes',
+			'180' : '3 minutes',
+			'240' : '4 minutes',
+			'300' : '5 minutes'
+		},
+		handler: function() {
+			#timeline.feed.resetTimer();
+		}
+	},
+	{
+		title: 'Refresh on Tweet',
+		description: 'Refresh the timeline after tweeting.',
+		key: 'refreshOnTweet',
+		options: OptionsUI.ON_OFF
+	},
+	{
+		title: 'Auto Login',
+		description: 'Login automatically when starting thaiWitter.',
+		handler: function(id, value) {
+			var enabled = (value == '0' ? '0' : '1');
+			var xh = new XH('POST', #config.api.auto + '?time=' + (new Date().getTime()));
+			var pg = new Progress('Saving Settings...');
+			xh.setProgress(pg);
+			xh.oncomplete = function(response) {
+				try {
+					var data = T.parseJSON(response);
+					if (data.scs) {
+						pg.ok('<span style="color: #7f7"><b>Success.</b> Login Info Saved.</span>');
+					} else {
+						pg.ok('Cannot Save Login Info');
+					}
+				} catch (e) {
+					pg.fail('Cannot Save Login Info');
+				}
+			};
+			xh.sendForm('enable=' + enabled + '&tk=' + THE_TOKEN);
+		},
+		options: OptionsUI.ON_OFF,
+		value: function() {
+			var cookie = document.cookie;
+			return #config.autologinCheck(cookie) ? '1' : '0';
+		}
+	},
+	{
+		title: 'Show Client',
+		description: 'Show client name in the timeline.',
+		key: 'ifclient',
+		options: OptionsUI.ON_OFF,
+		handler: InfoToggler.createHandler('ifclient')
+	},
+	{
+		title: 'Show In Reply To',
+		description: 'Show the username and link to referred status in timeline.',
+		key: 'ifirp',
+		options: OptionsUI.ON_OFF,
+		handler: InfoToggler.createHandler('ifirp')
+	},
+	{
+		title: 'Auto Scroll',
+		description: 'Scroll to the bottom of the timeline automatically.',
+		key: 'autoScrollOnRefresh',
+		options: { '0': 'No', '1': 'Yes', 'smarter': 'Smarter Yes!' }
+	},
+	{
+		title: 'Use Retweet API',
+		description: 'Use Twitter\'s official API when retweeting without altering the message.',
+		key: 'useRetweetAPI',
+		options: OptionsUI.ON_OFF
+	},
+	{
+		title: 'Direct API Call',
+		description: 'Call Twitter\'s API directly (instead of calling through thaiWitter servers). [Desktop Version]',
+		key: 'clientEcho',
+		options: OptionsUI.ON_OFF,
+		visible: function() { return Capabilities.canEcho(); }
+	},
+	{
+		title: 'User Stream',
+		description: 'Real time twitter streaming using user streams. [Desktop Version]',
+		key: 'clientStream',
+		options: OptionsUI.ON_OFF,
+		handler: function(id, value) {
+			if (value != '1') {
+			  	StreamLoader.abortLast();
+			}
+		},
+		visible: function() { return Capabilities.canStream(); }
+	},
+	{
+		title: 'Geolocation<span id="geo-status"></span>',
+		description: 'Send your location with your tweet.',
+		key: 'geolocationMode',
+		options: { '0' : 'Off', '1' : 'On', '2' : 'Fixed' },
+		handler: function(id, value) {
+			if (value == '1') {
+				#geo.on ();
+			} else {
+				#geo.off ();
+			}
+		},
+		validate: function(id, value) {
+			if (value == '1') {
+				if (!navigator.geolocation) {
+					notify ('No geolocation support for you(r browser)!');
+					return '0';
+				}
+			}
+			if (value == '2') {
+				notify ('Not implemented.');
+				return '0';
+			}
+		},
+		init: function() {
+			if (PREF('geolocationMode') == '1') #geo.on();
+		}
+	},
+	{
+		title: 'Hardcore Mode',
+		description: 'Hides the top and bottom bar, lets you see the tweet.',
+		key: 'hardcoreMode',
+		options: OptionsUI.ON_OFF,
+		renderTo: 'tdmoar',
+		handler: function(id, value) {
+			#appState.setSwitch('hardcore', value != '0', true);
+			#tweetBox.checkLength();
+		},
+		init: function() {
+			#appState.setSwitch('hardcore', PREF('hardcoreMode') != '0', true);
+			#tweetBox.checkLength();
+		}
+	},
+	{
+		title: 'Bypass t.co',
+		description: 'Go to the link directly instead of through t.co, thanks to MICT blocking it.',
+		options: OptionsUI.ON_OFF,
+		key: 'skipTCo',
+		renderTo: 'tdmoar'
+	},
+	{
+		title: 'Image Upload Provider',
+		description: 'Use which provider to upload images.',
+		key: 'imageUploader',
+		options: {
+			'twitter': 'pic.twitter.com',
+			'upic': 'upic.me'
+		},
+		renderTo: 'tdmoar'
+	},
+	{
+		title: 'Notification Type',
+		description: 'Select the type for notification. Use built in notification or Growl.',
+		key: 'notificationEngine',
+		options: {
+			'builtin': 'Built-in Notification',
+			'gntp': 'GNTP / Growl'
+		},
+		renderTo: 'tdmoar',
+		visible: function() { return Capabilities.canGrowl(); }
+	},
+	{
+		title: 'Notification Picture',
+		description: 'Display profile picture on notifications.',
+		key: 'notificationPicture',
+		options: OptionsUI.ON_OFF,
+		renderTo: 'tdmoar'
+	}
+];
+
+// }
+
+// --xtra--
+// url keywords (timeline mode) {
+
+function handleKeywords() {
+	var m;
+	var showUserInfo = false;
+	if (location.search.match(/^\?mode=mentions/)) {
+		xtra_keyword = '[@] ';
+		xtra_timeline = 'mentions';
+		xtra_params = '&timeline=mentions';
+	} else if (location.search.match(/^\?mode=faves/)) {
+		xtra_keyword = '[Fav] ';
+		xtra_timeline = 'fave';
+		xtra_params = '&timeline=faves';
+	} else if (location.search.match(/^\?mode=dms/)) {
+		xtra_keyword = '[DM] ';
+		xtra_timeline = 'dms';
+		xtra_params = '&timeline=dms';
+	} else if ((m = location.search.match(/^\?q=([^&]+)/))) {
+		var terms = decodeURIComponent(m[1]);
+		xtra_keyword = '[search: ' + terms + '] ';
+		xtra_timeline = 'search';
+		xtra_params = '&timeline=search&q=' + encodeURIComponent(terms);
+	} else if ((m = location.search.match(/^\?u=([^&]+)/))) {
+		var username = decodeURIComponent(m[1]);
+		xtra_keyword = '[' + (username.indexOf('/') > -1 ? 'list' : 'user') + ': ' + username + '] ';
+		xtra_timeline = 'user';
+		xtra_params = '&timeline=user&u=' + encodeURIComponent(username);
+		showUserInfo = true;
+		#userInfoView.show(username);
+	}
+	if (!showUserInfo)
+		#userInfoView.hide();
+}
+
+// }
+
+
+
+
+
+
+// --mixin: custom-css--
+// wtf {
+
+class CustomCss {
+
+	init() {
+		@element = document.createElement('style');
+		try {
+			this.append();
+		} catch (e) {
+			document.addEventListener ('DOMContentLoaded', this::append, false);
+		}
+		this.update (PREF('customCSS'));
+	}
+
+	getCSS()  @text;
+
+	append() {
+		document.getElementsByTagName('head')[0].appendChild (@element);
+	}
+
+	update(style) {
+		var css = '@import "data:text/css,' + encodeURIComponent(style) + '";';
+		try {
+			@element.innerHTML = css;
+		} catch (e) {
+			@element.textContent = css;
+		}
+		@text = style;
+		PREF('customCSS=' + @text);
+	}
+	
+	openEditor() {
+		var that = this;
+		openPopup('custom-css.html', '', "toolbar=no,location=no,status=no,menubar=no,scrollbars=no,width=300,height=200,resizable=yes");
+	}
+
+}
+
+class CssEditor implement {
+
+	watch(element) {
+		var editor = new this(element);
+	}
+
+} prototype implement {
+
+	init(element) {
+		@element = element;
+		this.loadCss();
+		this.registerEventHandlers();
+		@timer = 0;
+	}
+
+	loadCss() {
+		@element.value = #customCSS.getCSS();
+	}
+
+	saveCss() {
+		#customCSS.update(@element.value);
+	}
+
+	registerEventHandlers() {
+		@element.addEventListener('keypress', this::textChanged, false);
+		@element.addEventListener('mouseup',  this::textChanged, false);
+		@element.addEventListener('change',   this::textChanged, false);
+	}
+
+	textChanged() {
+		clearTimeout(@timer);
+		@timer = setTimeout(this::saveCss, 500);
+	}
+
+}
+
+class ZzzKeyHandler .prototype.register({
+
+	'A67': function() { #customCSS.openEditor(); },
+	'A88': function() { if (confirm('Reset custom CSS?')) #customCSS.update('/* Custom CSS */\n\n'); }
+
+});
+
+class Application {
+	registerComponents() {
+		super;
+		this.register('customCSS', new CustomCss());
+	}
+}
+
+// }
+
+// --mixin: conversaion--
+// allows showing of conversation!
+
+class TimelineCommands {
+	showConversation() {
+		new Conversation(@timeline.getCurrent().record).show();
+	}
+}
+
+class TimelineKeyHandler {
+	enter(kc, e) {
+		if (e.shiftKey) {
+			@timeline.cmd.showConversation();
+		} else {
+			return super(kc, e);
+		}
+	}
+}
+
+class TimelineMouseHandler .prototype.register({
+	'reply-to': function(e, c, g) {
+		var id = g('reply-to');
+		if (!e.altKey) {
+			new Conversation(@timeline.map[id].record).show();
+		} else {
+			arguments.callee._super.call(this, e, c, g);
+		}
+	}
+});
+
+// --conversation--
+
+class Conversation {
+
+	init(target) {
+		@target  = target;
+		@root    = @target.findRoot();
+		@aborted = false;
+	}
+
+	getTarget()  @target;
+	getRoot()    @root;
+
+	show() {
+		if (@root.loaded) { // the root found is loaded
+			this.display();
+		} else {
+			if (confirm('Do you want to fetch to the root of the conversation?\n' +
+				'This feature is still at experimental state, so...\n\n' +
+				'Pressing OK will make thaiWitter make a lot of API calls!\n    and get a more complete overview of the conversation.\n' +
+				'Pressing cancel and thaiWitter will only use the available information\n    without fetching additional data.\n\n' +
+				'Don\'t blame me if you used up all your API limit, OK?')) {
+				this.loadAll();
+			} else {
+				this.display();
+			}
+		}
+	}
+
+	loadAll(callback) {
+		@pg = new Progress('Loading Conversation...');
+		@onfinish = callback;
+		this.loadRoot();
+	}
+
+	cancel() {
+		@aborted = true;
+		if (@xh) {
+			@xh.abort();
+		}
+		if (@pg) {
+			@pg.fail('Aborted!');
+			@pg = undefined;
+		}
+		if (@onfinish) {
+			@onfinish();
+		}
+	}
+
+	loadRoot() {
+	  	if (@root.mtChild) {
+			@xh = new XH('GET', #config.api.mt + '?id=' + @root.id.substr(4) + '&u=' + @root.mtOwner);
+			@xh.oncomplete = this::oncomplete;
+			@xh.isMt = @root
+			@xh.send();
+			return
+		}
+		@xh = new XH('GET', #config.api.show + '?id=' + @root.id);
+		@xh.oncomplete = this::oncomplete;
+		@xh.send();
+	}
+
+	gotTweet(data) {
+		var tweet = Tweet.addTweet(data);
+		if (@xh.isMt) {
+			Tweet.addConnection(tweet.id, @xh.isMt.mtChild)
+			@root = tweet
+			@target = tweet
+		}
+		@root = @root.findRoot();
+		if (@root.loaded || @root.mtChild) {
+			@pg.ok ('Conversation loaded!');
+			@pg = undefined;
+			if (@onfinish) @onfinish();
+			this.display();
+		} else {
+			@pg.intermediate();
+			this.loadRoot();
+		}
+	}
+
+	oncomplete(response) {
+		if (@aborted) {
+			return;
+		}
+		var data = T.parseJSON(response);
+		if (data.id_str) {
+			this.gotTweet(data);
+		} else {
+			@pg.fail('Can\'t fetch conversation!');
+		}
+	}
+
+	buildList() {
+		@list = [];
+		this.addBranches(@root);
+		@list.sort(function(a, b) {
+			return parseInt(a.id, 10) > parseInt(b.id, 10) ? 1 : -1;
+		});
+	}
+
+	addBranches(node) {
+		@list.push(node);
+		var branches = node.getBranches();
+		if (branches) {
+			for (var i in branches) {
+				this.addBranches(branches[i]);
+			}
+		}
+	}
+
+	display() {
+		this.buildList();
+		if (@list.length <= 1) {
+			notify('No conversation found!');
+			return;
+		}
+		var d = 'Conversation:\n===========================\n';
+		for (var i = 0; i < @list.length; i ++) {
+			d += '[' + (@list[i] == @target ? '*' : '') + @list[i].user.username + '] ' + @list[i].text + '\n';
+		}
+		d += '===========================\nI seriously need a better UI for this.';
+		alert (d);
+	}
+
+	getList()  @list;
+
+}
+
+// }
+
+// }
+
+// --mixin: conversation-view--
+
+class ConversationKeyHandler extends TimelineKeyHandler {
+	keyDown(kc, e) {
+		if (kc === 27) {
+			@timeline.hide();
+			return false;
+		}
+		return super(kc, e);
+	}
+}
+
+class ConversationView(conversation) extends BaseTimeline {
+
+	init() {
+
+		@@visible = false;
+		this.container = C('secondary-container');
+		this.wrap      = C('secondary-wrapper');
+		this.element   = C('secondary-display');
+		this.container.appendChild(this.wrap);
+		this.container.style.display = 'none';
+		this.wrap.appendChild(this.element);
+
+		window.addEventListener('resize', this::windowResized, true);
+		rootElement.appendChild(this.container);
+
+		super;
+
+	}
+
+	getTopPad()     0;
+	getBottomPad()  0;
+
+	windowResized() {
+		this.container.style.top    = (el.head.offsetHeight + 20) + 'px';
+		this.container.style.bottom = (el.tweetData.offsetHeight + 20) + 'px';
+	}
+
+	createKeyHandler()   new ConversationKeyHandler(this);
+	shouldSmoothScroll() super && @@visible;
+	getHeight()          this.container.offsetHeight;
+	isVisible()          @@visible;
+
+	show() {
+		@@visible = true;
+		this.container.style.display = 'block';
+		this.element.style.paddingTop    = Math.round(this.getHeight() * 0.4) + 'px';
+		this.element.style.paddingBottom = Math.round(this.getHeight() * 0.6) + 'px';
+		this.windowResized();
+		app.setActiveTimeline(this);
+	}
+
+	hide() {
+		@@visible = false;
+		this.container.style.display = 'none';
+		app.setActiveTimeline(#mainTimeline);
+		if (this.conversation) {
+			this.conversation.cancel();
+			this.conversation = undefined;
+		}
+	}
+
+	showList(conversation) {
+		this.conversation = conversation;
+		var c = this.getCurrent();
+		var oldPosition;
+		if (c && !conversation.getTarget()) {
+			oldPosition = c.getPosition() + c.getHeight();
+		}
+		this.setRecords(conversation.getList());
+		if (conversation.getTarget()) {
+			this.selectById(conversation.getTarget().id);
+		}
+		if (c && oldPosition != null) {
+			this.shiftScrollPos(c.getPosition() + c.getHeight() - oldPosition);
+		}
+		this.show();
+		this.updateRelatedRecords();
+	}
+
+	handleRecords(records) {
+		if (@@visible) {
+			var relevant = [], root = this.conversation.getRoot();
+			for (var i = 0; i < records.length; i ++) if (records[i].findRoot() == root) relevant.push(records[i]);
+			this.addRecords(relevant);
+			this.updateRelatedRecords();
+		}
+	}
+
+	select(item, noScroll) {
+		super;
+		this.updateRelatedRecords();
+	}
+
+	updateRelatedRecords() {
+		var cur = this.getCurrent();
+		if (!cur) return;
+		var related = [];
+		var c = cur.record.getParent();
+		if (c) related.push(c);
+		//var b = cur.record.getBranches();
+		//if (b) {
+		//	for (var i in b) related.push(b[i]);
+		//}
+		this.setRelatedRecords(related);
+	}
+
+	setRelatedRecords(records) {
+		if (@@relatedItems) {
+			for (var i = 0; i < @@relatedItems.length; i ++) {
+				@@relatedItems[i].setState('conversation-related', '');
+			}
+		}
+		@@relatedItems = [];
+		for (var i = 0; i < records.length; i ++) {
+			if (this.map[records[i].id]) {
+				@@relatedItems.push(this.map[records[i].id]);
+				this.map[records[i].id].setState('conversation-related', 'status-related');
+			}
+		}
+	}
+
+}
+
+class Application {
+	registerComponents() {
+		super;
+		this.register('conversation', new ConversationView());
+	}
+}
+
+class Conversation {
+	show() {
+		this.display();
+	}
+	display() {
+		this.buildList();
+		#conversation.showList(this);
+	}
+	gotTweet(data) {
+		super;
+		this.display();
+	}
+	handleLoadAll(record) {
+		if (!record.loaded && record.jobs == 0) {
+			@target = undefined;
+			this.loadAll(record.doJob());
+			return true;
+		}
+		return false;
+	}
+}
+
+class TimelineKeyHandler {
+	enter(kc, e) {
+		if (@timeline.conversation && @timeline.getCurrent() && @timeline.conversation.handleLoadAll(@timeline.getCurrent().record)) {
+			return;
+		} else {
+			super(kc, e);
+		}
+	}
+}
+
+class AutoScroller {
+	autoScroll() {
+		if (#conversation.isVisible()) {
+			return;
+		}
+		return arguments.callee._super.call(this, arguments);
+	}
+}
+
+class TimelineMouseHandler {
+	handleClick(e) {
+		if (#conversation.isVisible() && @timeline !== #conversation) {
+			#conversation.hide();
+		} else {
+			return super(e);
+		}
+	}
+}.register({
+	'load': function(e, c, g) {
+		var record = @timeline.map[g('load')].record;
+		if (@timeline.conversation) {
+			@timeline.conversation.handleLoadAll(record);
+		}
+	}
+});
+
+class TweetProc {
+	handleRecord(record) {
+		#conversation.handleRecords([record]);
+		return super;
+	}
+}
+
+class Feed {
+	addRecordsToTimeline(records) {
+		#conversation.handleRecords(records);
+		return super;
+	}
+}
+
+// }
+
+// --mixin: following-list
+
+class TabsToggler.prototype.list.push('lss');
+
+class TabsToggler.prototype.register({
+	'lss': function() {
+		FollowingList.activate();
+	}
+});
+
+class FollowingList implement {
+
+	activate() {
+	  	if (!@instance) @instance = new this()
+		@instance.activate();
+	}
+
+} prototype implement {
+
+	init() {
+		@loaded = false;
+		@button = $('lssbutton');
+		@button.onclick = this::buttonClicked;
+		this.getList();
+	}
+
+	getList() {
+		var gotList = this::gotList;
+		var pg = new Progress('Loading Lists...');
+		if (!@loaded) {
+			$('listslist').innerHTML    = '<div class="listbox-loading">Loading...</div>';
+			$('searcheslist').innerHTML = '<div class="listbox-loading">Loading...</div>';
+		}
+		var xh = new XH('GET', #config.api.follow + '?time=' + (new Date().getTime()));
+		pg.oncancel = xh::abort;
+		xh.setProgress(pg);
+		xh.oncomplete = function(response) {
+			try {
+				var data = T.parseJSON(response);
+				gotList(data);
+				pg.ok('Loaded!');
+			} catch (e) {
+				pg.fail('Can\'t Load Lists!');
+			}
+		};
+		xh.send();
+	}
+
+	buttonClicked() {
+		this.getList();
+	}
+
+	createLink(text, link) {
+		return '<span class="listbox-item" onclick="pwns(unescape(\'' + escape(link) + '\'))">' + text + '</span>';
+	}
+
+	gotList(data) {
+		var lists = '', searches = '';
+		@loaded = true;
+		data.lists.sort(function(a, b) { return a.full_name.toLowerCase() < b.full_name.toLowerCase() ? -1 : 1; });
+		data.searches.sort(function(a, b) { return a.query.toLowerCase() < b.query.toLowerCase() ? -1 : 1; });
+		for (var i = 0; i < data.lists.length; i ++) {
+			lists += this.createLink(data.lists[i].full_name, '?u=' + encodeURIComponent(data.lists[i].full_name.substr(1)));
+		}
+		for (var i = 0; i < data.searches.length; i ++) {
+			searches += this.createLink(data.searches[i].query, '?q=' + encodeURIComponent(data.searches[i].query));
+		}
+		$('listslist').innerHTML = lists;
+		$('searcheslist').innerHTML = searches;
+	}
+
+	activate() {
+	}
+
+}
+
+// }
+
+// --mixin: touch--
+// touch manager {
+
+class TouchManager {
+
+	touchClass = (window.innerWidth >= 512 ? 'tablet' : 'mobile');
+	@isTouch = null;
+
+	isTouch() {
+		if (@isTouch !== null) {
+			return @isTouch;
+		}
+		if (location.search.match(/[&?]emulatetouch/)) {
+			return @isTouch = true;
+		}
+		return @isTouch = ('ontouchstart' in document.body);
+	}
+
+	has3d() {
+		if (@has3d == null) {
+			@has3d = (typeof WebKitCSSMatrix != 'undefined') && ('m44' in new WebKitCSSMatrix());
+		}
+		return @has3d;
+	}
+
+	init() {
+		if (!this.isTouch()) return;
+		this.hook();
+	}
+
+	setAppearance() {
+		if (!this.isTouch()) return;
+		#appState.set('touch-mode', true);
+		#appState.set(this.touchClass, true);
+		$('install-tw').style.display = 'none';
+		$('reload-tw').style.display = '';
+	}
+
+	hook() {
+
+		class EventHandler {
+			init() {
+				super;
+				window.addEventListener('orientationchange', function() {
+					setTimeout(function() {
+						var old = getResizingDisabled();
+						this.setResizingDisabled(false);
+						this.globalResize();
+						this.setResizingDisabled(old);
+					}.b(this), 0);
+				}.b(this), false);
+				this.resizeHandlers.push(function() {
+					rootElement.style.top = (document.documentElement.offsetHeight - window.innerHeight) + 'px';
+				});
+			}
+		}		
+
+		class TweetBox(touch) {
+			init() {
+				super;
+				@element.addEventListener('focus', function() {
+					#events.globalResize();
+					#events.setResizingDisabled(true);
+				}, false);
+				@element.addEventListener('blur',  function() {
+					#events.setResizingDisabled(false);
+					#events.globalResize();
+				}, false);
+			}
+		}
+
+		class BaseTimeline(touch) {
+
+			init() {
+				@@touchScrollDriver = new TouchScrollDriver(this);
+				arguments.callee._super.apply(this, arguments);
+				@@touchScroller = new TouchScroller(this);
+			}
+
+			getTouchScroller()      @@touchScroller;
+			getDefaultThreshould()  64;
+			
+			scrollTo(x, y) {
+				@@touchScrollDriver.scrollTo (y);
+			}
+
+			shouldSmoothScroll()       super && (@@touchScroller ? !@@touchScroller.isScrolling() : true);
+			getMaxScroll()             Infinity;
+			getMinScroll()             -Infinity;
+
+		}
+
+		class Timeline(touch) {
+
+			scrollTo(x, y) {
+				@@touchScrollDriver.scrollTo (y);
+			}
+
+			getMaxScroll()             Infinity;
+			getMinScroll()             -Infinity;
+
+		}
+
+		class TWButtonsBar {
+
+			setOffset(offset) {
+				@element.style.marginRight = 0;
+				@element.style.marginLeft  = 0;
+			}
+
+		}
+
+	}
+
+}
+
+// --touch-driver-- {
+
+class TouchScrollDriver {
+
+	init(timeline) {
+		@position = 0;
+		@lastPosition = 0;
+		@timeline = timeline;
+	}
+
+	getPosition()  @position;
+
+	scrollTo(x) {
+		@lastPosition = @position;
+		@position = x;
+		this.update ();
+	}
+
+	update() {
+		if (!#touch.has3d()) {
+			@timeline.element.style.top = '' + (-@position) + 'px';
+		} else {
+			@timeline.element.style.WebkitTransform = 'translateY(' + (-@position) + 'px) translateZ(0)';
+		}
+	}
+
+}
+
+// }
+
+// --touch-tracker-- {
+
+class TouchTracker {
+
+	init(threshould) {
+		@threshould = threshould;
+		this.clear();
+	}
+	
+	clear() {
+		@data = [];
+	}
+
+	prune(time) {
+		var threshould = @threshould;
+		while (@data.length > 0 && @data[0].time < time - threshould) {
+			@data.shift ();
+		}
+	}
+
+	track(time, position) {
+		this.prune (time);
+		@data.push ({
+			time: time,
+			position: position
+		});
+	}
+
+	getSpeed(time) {
+		this.prune (time);
+		if (@data.length > 1) {
+			var first = @data[0];
+			var last = @data[@data.length - 1];
+			return (last.position - first.position) / (last.time - first.time);
+		}
+		return 0;
+	}
+
+}
+
+// }
+
+// --touch-scroller-- {
+
+class TouchFingerTracker {
+	init(f) {
+		@id = f.id;
+		@x = f.x;
+		@y = f.y;
+	}
+}
+
+class TouchScroller {
+
+	/*
+	@lastEventTime = false;
+	@lastFingerPosition = undefined;
+	@initialFingerPositon = undefined;
+
+	@scrolling = false;
+	@down = false;
+	*/
+
+	@scrolling = false;
+	@down = null;
+	@animation = 0;
+	@animationSpeed = 0;
+	@animationPosition = undefined;
+	@animationTime = undefined;
+
+	isScrolling()        @scrolling;
+
+	init(timeline) {
+		@tracker = new TouchTracker(#touch.has3d() ? 100 : 360);
+		@timeline = timeline;
+		@content = @timeline.element;
+		@wrapper = @content.parentNode;
+		this.addHandlers(@timeline instanceof Timeline ? document : @wrapper, this);
+		this.hookOnResize();
+		this.onresize();
+		@timeline.setScrollPos (20);
+	}
+
+	hookOnResize() {
+		var that = this;
+		class EventHandler {
+			init() {
+				super;
+				this.resizeHandlers.push(that::onresize);
+			}
+		}
+	}
+
+	// --touch-scroller-events-- {
+	addHandlers(element, handler) {
+		function createFinger(e, id) {
+			return { x: e.clientX, y: e.clientY, id: id, time: new Date().getTime() };
+		}
+		function createHandler(name) {
+			return function(e) {
+				if (e.target.nodeName == 'TEXTAREA') return;
+				for (var c = e.target; c; c = c.parentNode) {
+					if (c.hasAttribute && c.hasAttribute('data-tw-popup')) {
+						return;
+					}
+				}
+				for (var i = 0; i < e.changedTouches.length; i ++) {
+					handler[name](e, createFinger(e.changedTouches[i], e.changedTouches[i].identifier));
+				}
+				e.preventDefault();
+				e.stopPropagation();
+			};
+		}
+		if ('ontouchstart' in document.body) {
+			element.addEventListener('touchstart', createHandler('ontouchstart'), false);
+			element.addEventListener('touchmove', createHandler('ontouchmove'), false);
+			element.addEventListener('touchend', createHandler('ontouchend'), false);
+		} else {
+			var down = false;
+			element.addEventListener ('mousedown', function(e) {
+				down = true;
+				handler.ontouchstart(e, createFinger(e, 1));
+			}, false);
+			element.addEventListener ('mousemove', function(e) {
+				if (down) {
+					handler.ontouchmove(e, createFinger(e, 1));
+				}
+			}, false);
+			element.addEventListener ('mouseup', function(e) {
+				down = 0;
+				handler.ontouchend(e, createFinger(e, 1));
+			}, false);
+		}
+		if (handler.setup) {
+			handler.setup();
+		}
+	}
+	ontouchstart(e, f) {
+		if (@down) return;
+		@down = @last = f;
+		@down.scrollingInitiated = false;
+		@animationSpeed = 0;
+		this.stopAnimation();
+		@tracker.clear();
+	}
+	ontouchmove(e, f) {
+		if (!@down) return;
+		if (f.id !== @down.id) return;
+		if (@scrolling) {
+			@timeline.shiftScrollPos(@last.y - f.y);
+			@tracker.track(f.time, @timeline.getCurrentScrollPos());
+		}
+		if (Math.abs(@down.y - f.y) >= 5) {
+			@down.scrollingInitiated = true;
+			if (!@scrolling) {
+				@scrolling = true;
+				@tracker.track(f.time, @timeline.getCurrentScrollPos());
+			}
+		}
+		@last = f;
+	}
+	ontouchend(e, f) {
+		if (!@down) return;
+		if (f.id !== @down.id) return;
+		if (@scrolling) {
+			@tracker.track(f.time, @timeline.getCurrentScrollPos());
+			@animationSpeed = @tracker.getSpeed(f.time) * 18;
+			@animationPosition = @timeline.getCurrentScrollPos();
+			if (!@down.scrollingInitiated) { // this is stopping motion
+				this.sendClickStatus(e.target);
+			}
+			this.startAnimation();
+		} else {
+			if (e.type == 'touchend') {
+				this.sendClick(e.target);
+			}
+		}
+		@down = null;
+	}
+	sendClick(t) {
+		var evt = document.createEvent("MouseEvents");
+		evt.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+		t.dispatchEvent(evt);
+	}
+	sendClickStatus(t) {
+		for (var c = t; c; c = c.parentNode) {
+			if (c.hasAttribute && c.hasAttribute('data-tw-status-item')) {
+				return this.sendClick(c);
+			}
+		}
+		return this.sendClick(t);
+	}
+	onresize() {
+		if (@lastTimelineHeight != null) {
+			@timeline.shiftScrollPos(@lastTimelineHeight - window.innerHeight);
+			@lastTimelineHeight = window.innerHeight;
+		}
+	}
+	// }
+	
+	// --touch-scroller-done-- {
+	
+	doneScrolling() {
+	
+		if (@timeline.items.length === 0) return;
+
+		var tt = @timeline.getScrollPos() + el.head.offsetHeight;
+		var bb = @timeline.getScrollPos() + @timeline.getHeight() - el.tweetData.offsetHeight;
+
+		var i = @timeline.getCurrent().index;
+		
+		var c = @timeline.items[i];
+		var t = c.getPosition();
+		var b = t + c.getHeight();
+		if (b > bb) {
+			for (i --; i >= 0; i --) {
+				c = @timeline.items[i];
+				t = c.getPosition();
+				b = t + c.getHeight();
+				if (b <= bb || i === 0) {
+					@timeline.selectItem (i, true);
+					break;
+				}
+			}
+		} else if (t < tt) {
+			for (i ++; i < @timeline.items.length; i ++) {
+				c = @timeline.items[i];
+				t = c.getPosition();
+				if (t >= tt || i == @timeline.items.length - 1) {
+					@timeline.selectItem (i, true);
+					break;
+				}
+			}
+		}
+		
+	}
+
+	// }
+
+	// --touch-scroller-animation-- {
+	startAnimation() {
+		var that = this;
+		@animationTime = new Date().getTime();
+		if (@timeline.items.length > 0) {
+			this.minScroll = @timeline.items[0].getPosition() + @timeline.items[0].getHeight() - @timeline.getHeight() + @timeline.getBottomPad() + 24;
+			this.maxScroll = @timeline.items[@timeline.items.length - 1].getPosition() - @timeline.getTopPad() - 24;
+		} else {
+			this.minScroll = 0;
+			this.maxScroll = 0;
+		}
+		clearInterval (@animation);
+		@animation = setInterval(function() {
+			that.animationFrame ();
+		}, 1000 / 60);
+	}
+	stopAnimation() {
+		clearInterval (@animation);
+	}
+	animationDone(command) {
+		@scrolling = false;
+		if (command) {
+			@timeline.cmd[command]();
+		} else {
+			this.doneScrolling ();
+		}
+		this.stopAnimation ();
+	}
+	animationFrame() {
+		var newTime = new Date().getTime(),
+			content = @content, wrapper = @wrapper,
+			elapsed = (newTime - @animationTime) * 60 / 1000,
+			newSpeed = @animationSpeed * Math.pow(0.97, elapsed),
+			newPosition = (@animationSpeed * (Math.pow(0.97, elapsed) - 1)) / (Math.log(0.97)) + @animationPosition,
+			minPosition = this.minScroll, maxPosition = this.maxScroll,
+			brake = false;
+		@timeline.setScrollPos (Math.round(newPosition));
+		@animationTargetCommand = undefined;
+		if (newPosition < minPosition) {
+			brake = true;
+			@animationTarget = minPosition;
+			// @animationTargetCommand = 'home';
+		} else if (newPosition > maxPosition) {
+			brake = true;
+			@animationTarget = maxPosition;
+			// @animationTargetCommand = 'end';
+		}
+		if (brake) {
+			var that = this;
+			clearInterval (@animation);
+			@animationTime = newTime;
+			@animationSpeed = newSpeed;
+			@animationPosition = newPosition;
+			@animation = setInterval(function() {
+				that.leaveFrame();
+			}, 1000 / 60);
+		} else if (Math.abs(newSpeed) < 0.5) {
+			this.animationDone();
+		}
+	}
+	leaveFrame() {
+		var newTime = new Date().getTime(),
+			elapsed = (newTime - @animationTime) * 60 / 1000,
+			newPosition = @animationPosition + @animationSpeed * elapsed;
+		@timeline.setScrollPos (Math.round(newPosition));
+		if (elapsed > 8) {
+			var that = this;
+			clearInterval (@animation);
+			@animationTime = newTime;
+			if ((@animationPosition - @animationTarget) * (newPosition - @animationTarget) < 0
+				&& (newPosition - @animationTarget) * @animationSpeed > 0) {
+				@animationPosition = newPosition;
+				@animation = setInterval(function() {
+					that.animationFrame();
+				}, 1000 / 60);
+			} else {
+				@animationPosition = newPosition - @animationTarget;
+				@animation = setInterval(function() {
+					that.brakeFrame();
+				}, 1000 / 60);
+			}
+		}
+	}
+	brakeFrame() {
+		var newTime = new Date().getTime(),
+			elapsed = (newTime - @animationTime) * 60 / 1000,
+			newPosition = @animationPosition * Math.pow(0.8, elapsed) + @animationTarget,
+			roundedPosition = Math.round(newPosition);
+		@timeline.setScrollPos (roundedPosition);
+		if (roundedPosition == @animationTarget) {
+			this.animationDone(@animationTargetCommand);
+		}
+	}
+	// }
+
+}
+
+// }
+
+class Application {
+	registerComponents() {
+		this.register('touch', new TouchManager());
+		super();
+	}
+	launchApplication() {
+		this.locate('touch').setAppearance();
+		super;
+	}
+}
+
+// --touch-easter--
+// what is this going to do? {
+class TouchEasterEgg {
+	@pi = [2, 0, 3, 0, 4];
+	init() {
+		@queue = [];
+	}
+	notify(index) {
+		@queue.push(index);
+		while (@queue.length > @pi.length) @queue.shift();
+		if (@queue.length != @pi.length) return;
+		for (var i = 0; i < @queue.length; i ++) {
+			if (@pi[i] != @queue[i]) return;
+		}
+		@queue = [];
+		var dialog = new TWDialog('?!?', this::renderContent, 'What is it?');
+		dialog.show();
+		dialog.onhide = this::scatter;
+	}
+	scatter(cont, dc) {
+		var ai = [];
+		dc();
+		for (var i = 0; i < @buttons.length; i ++) {
+			ai.push({
+				el: @buttons[i],
+				top: @buttons[i].offsetTop,
+				left: @buttons[i].offsetLeft,
+				angle: Math.random() * Math.PI * 2
+			});
+		}
+		@animation = dtjs2.a.c(0, 1, 0.3, function(v, fin) {
+			for (var i = 0; i < ai.length; i ++) {
+				ai[i].el.style.top = (ai[i].top + Math.sin(ai[i].angle) * v * 108) + 'px';
+				ai[i].el.style.left = (ai[i].left + Math.cos(ai[i].angle) * v * 108) + 'px';
+			}
+			if (fin) {
+				cont();
+			}
+		}, dtjs2.ease.o);
+	}
+	button(cls, label, kc) {
+		var el = C('magic-button magic-button-' + cls);
+		el.appendChild(document.createTextNode(String.fromCharCode(label)));
+		el.onclick = function(e) {
+			#events.processKeyHandlerQueue('keyDown', kc, e);
+			#events.processKeyHandlerQueue('keyUp', kc, e);
+			#tweetBox.blur();
+		}.b(this);
+		@element.appendChild(el);
+		@buttons.push(el);
+	}
+	renderContent(el) {
+		if (!@element) {
+			@element = C('magic-box');
+			@buttons = [];
+			this.button('left', 9664, 37);
+			this.button('down', 9660, 40);
+			this.button('up', 9650, 38);
+			this.button('right', 9654, 39);
+		}
+		if (@animation) @animation();
+		for (var i = 0; i < @buttons.length; i ++) {
+			@buttons[i].style.top = '';
+			@buttons[i].style.left = '';
+		}
+		el.appendChild(@element);
+	}
+}
+
+class TouchManager {
+	hook() {
+		super;
+		var touchEEController = new TouchEasterEgg();
+		class Timeline {
+			select(item) {
+				var ret = super;
+				if (item && item.index != null) {
+					touchEEController.notify(item.index);
+				}
+				return ret;
+			}
+		}
+	}
+}
+
+// }
+
+// }
+
+// --mixin: facebook--
+// facebook integration {
+
+class Application(facebook) {
+	getBottomButtons() {
+		var r = super;
+		r.unshift(this.locate('facebookButton'));
+		return r;
+	}
+	registerComponents() {
+		this.register('facebookButton', new BottomButton('btn-facebook'));
+		super;
+		this.register('facebookController', new FacebookController(this.locate('facebookButton')));
+	}
+	launchApplication() {
+		super;
+		this.locate('facebookController').hookTweetBox(this.locate('tweetBox'));
+	}
+}
+
+class TimelineKeyHandler {
+	enter(kc, e) {
+		var controller = #facebookController;
+		if (!controller) return super;
+		if (!controller.isEnabled()) return super;
+		if (kc == 27) if (controller.flashDismiss() === false) return;
+		if (kc == 13) if (controller.flashRespond() === false) return;
+		return super;
+	}
+}
+
+class FacebookController {
+	@enabled = false;
+	@connected = false;
+	@intervened = false;
+	@shouldTweet = false;
+	init(button) {
+		@button = button;
+		@button.onclick = this::onclick;
+		@statusElement = $('fb-status');
+		@descriptionElement = $('fb-description');
+		@userElement = $('fb-user');
+		@buttonElement = $('fb-connect-button');
+		@buttonContainer = $('fb-connect-button-container');
+		@dataElement = $('fb-data');
+		@dataElement.style.display = 'none';
+		@buttonElement.onclick = this::connectButtonClicked;
+	}
+	hookTweetBox(tb) {
+		@tweetBox = tb;
+		var that = this;
+		@tweetBox.implement({
+			checkLength: function() {
+				super;
+				that.checkText();
+			}
+		});
+	}
+	isEnabled()    @enabled;
+	shouldFlash()  PREF('facebookTweet') == 'delayed' && this.determineByText() && !@intervened;
+	on() {
+		if (!@enabled) {
+			@button.show(); @button.dim(); @button.updateState();
+			@dataElement.style.display = 'block';
+			@descriptionElement.style.display = 'none';
+			@enabled = true;
+			this.checkSession(false);
+		}
+	}
+	off() {
+		if (@enabled) {
+			@button.hide(); @button.updateState();
+			@enabled = false;
+			@dataElement.style.display = 'none';
+			@descriptionElement.style.display = 'block';
+		}
+	}
+	determineByText() {
+		if (@tweetBox.getText() == '') return false;
+		if (@tweetBox.isReplying()) return false;
+		if (@tweetBox.isRetweeting() && PREF('facebookTweet') != '2' && PREF('facebookTweet') != 'delayed') return false;
+		if (@tweetBox.getText().match(/^\s*d\s+\w+/i)) return false;
+		if (@tweetBox.getText().match(/^\s*@/i)) return false;
+		return true;
+	}
+	determine() {
+		if (!this.determineByText()) return false;
+		if (PREF('facebookTweet') == 'selective' && !@tweetBox.getText().match(/#fb/i)) return false;
+		if (PREF('facebookTweet') == 'delayed') return false;
+		return true;
+	}
+	checkText() {
+		if (@tweetBox.getText() == '') {
+			@intervened = false;
+		}
+		if (@intervened) return;
+		if (this.determine()) {
+			this.setShouldTweet(true);
+		} else {
+			this.setShouldTweet(false);
+		}
+		if (@tweetBox.getText() == '' || (PREF('facebookTweet') == 'delayed' && this.determineByText())) {
+			@button.setState('shouldTweet', 'btn-fb-none');
+		}
+		@button.updateState();
+	}
+	setShouldTweet(shouldTweet) {
+		@shouldTweet = shouldTweet;
+		@button.setState('shouldTweet', shouldTweet ? 'btn-fb-update' : 'btn-fb-noupdate');
+	}
+	onclick() {
+		if (!@connected) {
+			optsNew.show();
+			#tabsToggler.go('fb');
+		} else {
+			this.toggleShouldTweet();
+		}
+	}
+	toggleShouldTweet() {
+		@intervened = true;
+		this.setShouldTweet(!@shouldTweet);
+		@button.updateState();
+	}
+	connectButtonClicked() {
+		if (!@connected) {
+			pwns('fb-page.html#redir=' + escape(@loginUrl).replace(/%/g, ','));
+		} else {
+			this.disconnect();
+		}
+	}
+	shouldTweet() {
+		return @enabled && @connected && @shouldTweet;
+	}
+	notConnected(text, login) {
+		@loginUrl = login;
+		@buttonContainer.style.display = login != null ? 'block' : 'none';
+		@buttonElement.innerHTML = 'Connect to Facebook';
+		@statusElement.innerHTML = text;
+		@userElement.innerHTML = '';
+		@userElement.className = 'fb-disconnected';
+		@connected = false;
+		@button.dim(); @button.updateState();
+	}
+	connected(name) {
+		@buttonContainer.style.display = 'block';
+		@buttonElement.innerHTML = 'Sign Out';
+		@statusElement.innerHTML = 'Connected';
+		@userElement.innerHTML = name;
+		@userElement.className = 'fb-connected';
+		@connected = true;
+		@button.undim(); @button.updateState();
+	}
+	disconnect() {
+		this.performSessionAPI('POST', 'signout=outtahere&tk=' + THE_TOKEN);
+	}
+	checkSession(fromLogin) {
+		this.performSessionAPI('GET', '');
+	}
+	performSessionAPI(method, data) {
+		@buttonContainer.style.display = 'none';
+		@statusElement.innerHTML = '(Loading...)';
+		var xh = new XH(method, #config.api.fbcheck + '?time=' + (new Date().getTime()) + xtra_secure);
+		xh.oncomplete = function(response) {
+			try {
+				var data = T.parseJSON(response);
+				if (!data.loggedIn) {
+					this.notConnected('Not Connected', data.redirect);
+				} else {
+					this.connected(data.name);
+				}
+			} catch (e) {
+				this.notConnected('Error!', null);
+			}
+		}.b(this);
+		if (method == 'POST') xh.sendForm(data); else xh.send();
+	}
+}
+
+class FacebookController(flash) {
+	@@flashing = false;
+	@@hintSent = false;
+	flash(o) {
+		@button.startFlashing();
+		@@flashing = true;
+		@@flashCallback = o;
+		setTimeout(this::flashTimeout, 5000);
+	}
+	stopFlashing() {
+		@button.stopFlashing();
+		@@flashing = false;
+		@@flashCallback = null;
+	}
+	flashTimeout() {
+		this.stopFlashing();
+	}
+	flashDismiss() {
+		if (!@@flashing) return;
+		this.stopFlashing();
+		return false;
+	}
+	flashRespond() {
+		if (!@@flashing) return;
+		@@flashCallback.sendToFacebook();
+		this.stopFlashing();
+		return false;
+	}
+}
+
+class OptionsUI.options.push(
+	{
+		title: 'Tweet To Facebook',
+		description: 'Update your Facebook status after tweeting.',
+		key: 'facebookTweet',
+		options: {
+			'0': 'Off',
+			'1': 'On',
+			'2': 'On + Retweets',
+			'selective': '<span style="cursor:help" title="Only when your status contains #fb, or you enable it yourself">Only #fb / Manual</span>',
+			'delayed': '<span style="cursor:help" title="After you tweet, you have 5 seconds to press Enter again">5 Seconds</span>'
+		},
+		renderTo: 'fb-option',
+		handler: function(id, value) {
+			if (value != '0') {
+				#facebookController.on();
+				#facebookController.checkText();
+			} else {
+				#facebookController.off();
+			}
+		},
+		init: function() {
+			if (PREF('facebookTweet') != '0') #facebookController.on();
+		}
+	}
+);
+
+class GlobalKeyHandler .prototype.register({
+	'A70': function() { #facebookController.onclick(); }
+});
+
+class FacebookStatusUpdateProc {
+	setPicture(picture) { @picture = picture; }
+	setLink(link) { @link = link; }
+	setText(text) { @text = text; }
+	send() {
+		var pg = new Progress('Posting to Facebook');
+		var xh = new XH('POST', #config.api.fbpost);
+		xh.oncomplete = function(response) {
+			try {
+				var data = T.parseJSON(response);
+				if (data.success) {
+					pg.ok('Posted to Facebook!', [59, 89, 152]);
+				} else {
+					pg.fail('Can\'t post to Facebook!');
+				}
+			} catch (e) {
+				pg.fail('Can\'t post to Facebook!');
+			}
+		}.b(this);
+		var linkParam = '', picture = @picture, link = @link;
+		if (picture != null) linkParam += '&picture=' + encodeURIComponent(picture);
+		if (link != null) linkParam += '&link=' + encodeURIComponent(link);
+		xh.sendForm('value=' + encodeURIComponent(@text) + linkParam + '&tk=' + THE_TOKEN);
+	}
+}
+
+class TweetProc(facebook) {
+	init() {
+		@@shouldSend = #facebookController.shouldTweet();
+		@@alreadySent = false;
+		@@facebookProc = null;
+		if (#facebookController.shouldFlash()) {
+			#facebookController.flash(this);
+		}
+	}
+	onsuccess(data) {
+		super;
+		var text = @req.getText();
+		var proc = new FacebookStatusUpdateProc();
+		if (PREF('facebookTweet') == 'selective') {
+			text = text.replace(/#fb$/i, '');
+		}
+		if (data && data.entities && data.entities.media && data.entities.media.length > 0) {
+			text = data.text.replace(/https?:\/\/t\.co\/(\w+)/g, function(all, word) {
+				for (var i = 0; i < data.entities.media.length; i ++) {
+					var medium = data.entities.media[i];
+					if (all == medium.url) {
+						if (medium.display_url == 'pic.twitter.com/' + word) {
+							var picURL = 'http://' + medium.display_url;
+							proc.setPicture(medium.media_url_https || medium.media_url);
+							proc.setLink(picURL);
+							return picURL;
+						}
+					}
+				}
+				return all;
+			});
+		}
+		proc.setText(text);
+		@@facebookProc = proc;
+		if (@@shouldSend) {
+			this.sendToFacebook();
+		}
+	}
+	sendToFacebook() {
+		if (@@facebookProc) {
+			if (@@alreadySent) return;
+			@@alreadySent = true;
+			@@facebookProc.send();
+		} else {
+			@@shouldSend = true;
+		}
+	}
+}
+
+// }
+
+// --mixin: image-upload--
+// {
+class ImageFile {
+	init(file) {
+		@file = file;
+		@element = C('image-upload-file');
+		@removeButton = C('image-upload-remove-button');
+		@name = C('image-upload-name');
+		@element.appendChild(@removeButton);
+		@element.appendChild(@name);
+		@removeButton.onclick = this::removeButtonClicked;
+		@name.appendChild(document.createTextNode(@file.name));
+	}
+	getFile()  @file;
+	renderTo(el) {
+		el.appendChild(@element);
+	}
+	remove(cont) {
+		if (@removed) return;
+		@removed = true;
+		dtjs2.a.c(@element.offsetHeight, 0, 0.25, function(v, f) {
+			@element.style.height = v + 'px';
+			if (f) if (@element.parentNode) { @element.parentNode.removeChild(@element); if (cont) cont(); }
+		}.b(this), dtjs2.ease.io);
+	}
+	removeButtonClicked() {}
+}
+
+class ImageUploader {
+	init() {
+		@popup = new TweetBarPopup('right');
+		@element = C('image-upload-files');
+		@popup.getContentElement().appendChild(@element);
+		@queue = [];
+		var dropTarget = document;
+		dropTarget.addEventListener('dragenter', this::ondragenter, false);
+		dropTarget.addEventListener('dragover',  this::ondragover, false);
+		dropTarget.addEventListener('drop',      this::ondrop, false);
+	}
+	hasImages()         @queue.length > 0;
+	getReserveLength()  @queue.length * (TWITTER_CONFIG.characters_reserved_per_media);
+	getFiles() {
+		var files = [];
+		for (var i = 0; i < @queue.length; i ++) {
+			files.push(@queue[i].getFile());
+			@queue[i].remove();
+		}
+		@queue = [];
+		@popup.hide();
+		return files;
+	}
+	queueFileForUpload(file) {
+		var image = new ImageFile(file);
+		if (file.size > TWITTER_CONFIG.photo_size_limit) {
+			notify(file.name + ': too large!');
+		}
+		@queue.push(image);
+		this.pruneToLimit();
+		image.renderTo(@element);
+		image.removeButtonClicked = function() {
+			this.removeImage(image);
+		}.b(this);
+	}
+	pruneToLimit() {
+		while (@queue.length > TWITTER_CONFIG.max_media_per_upload) {
+			var c = @queue.shift();
+			c.remove(this::updatePopupHeight);
+		}
+	}
+	updatePopupHeight() {
+		#tweetBox.checkLength();
+		if (@queue.length > 0) {
+			@popup.updateHeight();
+		} else {
+			@popup.hide();
+		}
+	}
+	removeImage(img) {
+		for (var i = 0; i < @queue.length; i ++) {
+			if (@queue[i] == img) {
+				@queue.splice(i, 1);
+				img.remove(this::updatePopupHeight);
+				break;
+			}
+		}
+	}
+	ondragenter(e) {
+		e.stopPropagation();
+		e.preventDefault();
+	}
+	ondragover(e) {
+		e.stopPropagation ();
+		e.preventDefault ();
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'copy';
+			e.dataTransfer.dropEffect = 'copy';
+		}
+	}
+	ondrop(e) {
+		var dt, files;
+		e.stopPropagation ();
+		e.preventDefault ();
+		dt = e.dataTransfer;
+		files = dt.files;
+		for (var i = 0; i < files.length && i < 1; i ++) {
+			this.queueFileForUpload(files[i]);
+		}
+		@popup.show();
+		#tweetBox.checkLength();
+	}
+}
+
+class ImageXH(multipart) extends XH {
+	init() {
+		@@fields = [];
+		super;
+	}
+	createXHR() {
+		var xhr = super;
+		if (xhr.upload && xhr.upload.addEventListener) {
+			xhr.upload.addEventListener('progress', this::onprogress, false);
+		}
+		return xhr;
+	}
+	addFormField(name, value, cont) {
+		@@fields.push('Content-Disposition: form-data; name="' + name + '"\r\n\r\n' + unescape(encodeURIComponent(value)));
+		cont();
+	}
+	addFile(name, fileName, file, cont) {
+		var fields = @@fields;
+		function work(binary) {
+			fields.push('Content-Disposition: form-data; name="' + name + '"; filename="' + fileName + '"\r\nContent-Type: ' + file.type + '\r\n\r\n' + binary);
+			cont();
+		}
+		if (file.getAsBinary) {
+			work(file.getAsBinary());
+		} else {
+			var r = new FileReader();
+			r.onload = function(e) { work(e.target.result); };
+			r.readAsBinaryString(file);
+		}
+	}
+	generateBoundary() {
+		var boundary = '---------------------------THAIWITTERUPLOAD';
+		for (var i = 0; i < 20; i ++) {
+			boundary += Math.floor(Math.random() * 10);
+		}
+		return boundary;
+	}
+	sendAll() {
+		for(;;) {
+			var boundary = this.generateBoundary();
+			var ok = true;
+			for (var i = 0; i < @@fields.length; i ++) {
+				if (@@fields[i].indexOf(boundary) != -1) {
+					ok = false; break;
+				}
+			}
+			if (ok) break;
+		}
+		var payload = '--' + boundary;
+		for (var i = 0; i < @@fields.length; i ++) {
+			payload += '\r\n' + @@fields[i] + '\r\n--' + boundary;
+		}
+		payload += '--';
+		this.setRequestHeader("Content-Type", "multipart/form-data, boundary="+boundary);
+		this.setRequestHeader("Content-Length", payload.length);
+		@xhr.sendAsBinary(payload);
+	}
+	onprogress() {
+	}
+}
+
+class ImageUploadReq {
+	init(tweetReq, files, pg) {
+		@tweetReq = tweetReq;
+		@files = files;
+		@pg = pg;
+		@provider = PREF('imageUploader');
+	}
+	upload() {
+		var echoAPI = @provider == 'upic' ? #config.api.echo : #config.api.imgecho;
+		var xh = new XH('GET', echoAPI + '?time=' + (new Date().getTime()));
+		xh.setProgress(@pg);
+		xh.oncomplete = this::gotEcho;
+		xh.send();
+	}
+	gotEcho(response) {
+		if (response.substr(0, 15) == 'Authorization: ') {
+			try {
+				@pg.intermediate();
+				this.startUpload(response.substr(15));
+			} catch (e) {
+				this.onfail('Error starting image upload!');
+				throw e;
+			}
+		} else {
+			this.onfail('Unauthorized!');
+		}
+	}
+	onfail(reason) {
+	}
+	oncomplete(response) {
+	}
+	appendLinkAndSend(url) {
+	}
+	startUpload(auth) {
+		var xh;
+		var files = @files;
+		var pg;
+
+		var authServiceProvider = 'https://api.twitter.com/1.1/statuses/update_with_media.json';
+		var mediaFieldName = 'media[]';
+		var action = 'complete';
+		var endpoint = #config.api.upload;
+		if (@provider == 'upic') {
+			authServiceProvider = 'https://api.twitter.com/1.1/account/verify_credentials.json';
+			mediaFieldName = 'media';
+			action = 'append';
+			endpoint = 'http://upic.me/api/upload?resp=json';
+		}
+
+		xh = new ImageXH('POST', endpoint);
+
+		xh.setProgress(@pg);
+		xh.setRequestHeader("X-Auth-Service-Provider", authServiceProvider);
+		xh.setRequestHeader("X-Verify-Credentials-Authorization", auth);
+		xh.oncomplete = function(response) {
+			if (pg) {
+				pg.ok('Uploaded!');
+			}
+			if (action == 'complete') {
+				this.oncomplete.apply(this, arguments);
+			} else if (action == 'append') {
+				try {
+					var x = T.parseJSON(response);
+					if (!x.mediaurl) throw new Error('cannot find link D:');
+					this.appendLinkAndSend(x.mediaurl);
+				} catch (e) {
+					this.onfail('cannot find link!');
+				}
+			}
+		}.b(this);
+		xh.onprogress = function(e) {
+			if (e && e.lengthComputable) {
+				pg.intermediate(e.loaded / e.total * 100);
+			}
+		};
+		this.setFormFields(xh, function() {
+			var i = 0;
+			function loop() {
+				if (!(i < files.length)) return next();
+				var file = files[i];
+				xh.addFile(mediaFieldName, file.name, file, function() {
+					i ++;
+					loop();
+				});
+			}
+			function next() {
+				pg = new Progress('Uploading...', true);
+				xh.sendAll();
+			}
+			loop();
+		});
+	}
+	getFormFields() {
+		if (@provider == 'upic') {
+			return [['message', @tweetReq.getText()]];
+		} else {
+			var fields = [['status', @tweetReq.getText()]];
+			if (@tweetReq.getReply() != null) fields.push(['in_reply_to_status_id', @tweetReq.getReply()]);
+			var coord = #geo.getCoordinates();
+			if (coord != null) {
+				fields.push(['lat', coord[0]]);
+				fields.push(['long', coord[1]]);
+				fields.push(['display_coordinates', 'true']);
+			}
+			return fields;
+		}
+	}
+	setFormFields(xh, callback) {
+		var fields = this.getFormFields();
+		var i = 0;
+		function loop() {
+			if (!(i < fields.length)) return callback();
+			xh.addFormField(fields[i][0], fields[i][1], function() {
+				i ++; loop();
+			});
+		}
+		loop();
+	}
+}
+
+class TweetReq(image) {
+	send() {
+		if (#imageUploader.hasImages()) {
+			@@upload = new ImageUploadReq(this, #imageUploader.getFiles(), @pg);
+			@@upload.onfail = this::onfail;
+			@@upload.oncomplete = this::oncomplete;
+			@@upload.appendLinkAndSend = this::appendLinkAndSend;
+			@@upload.upload();
+			return;
+		}
+		return super;
+	}
+	appendLinkAndSend(url) {
+		@text += (@text.match(/\s+$/) ? '' : ' ') + url;
+		this.send();
+	}
+}
+
+class TweetBox {
+	getNormalizedLength() {
+		return super + (#imageUploader ? #imageUploader.getReserveLength() : 0)
+	}
+}
+
+class Application {
+	registerComponents() {
+		super;
+		this.register('imageUploader', new ImageUploader());
+	}
+}
+// }
+
+// --thai-text-fix-- {
+// fixes thai text in iOS
+
+if (AM_I_IOS) {
+
+	InfoToggler.keys.push('ifiosthai');
+
+	OptionsUI.options.push({
+		title: 'Enlarge Thai Fonts (iOS)',
+		description: 'Enlarge Thai text in iOS (they are small!)',
+		key: 'ifiosthai',
+		options: OptionsUI.ON_OFF,
+		renderTo: 'tdmoar',
+		handler: InfoToggler.createHandler('ifiosthai')
+	});
+
+	class Item {
+		formatText() {
+			return (super).replace(/[\u0e01-\u0e5b]+/g, function(all) {
+				return '<span class="thai-text">' + all + '</span>';
+			});
+		}
+	}
+
+}
+
+// }

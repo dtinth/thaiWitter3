@@ -1,0 +1,14 @@
+#!/bin/bash
+
+export PORT=65432
+NODE_ENV=production node server.js &
+PID=$!
+URL="http://localhost:$PORT/test/index.html"
+echo "$URL"
+node_modules/.bin/mocha-phantomjs "$URL"
+STATUS=$?
+kill -INT $PID
+exit $STATUS
+
+
+

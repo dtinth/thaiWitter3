@@ -1,0 +1,34 @@
+.selectliek-container {
+	display: inline-block;
+	vertical-align: middle;
+	overflow: hidden;
+	position: relative;
+	cursor: pointer;
+	border: 1px solid #222324;
+	z-index: 1;
+	color: #fff;
+	&:hover {
+		border: 1px solid #464748;
+	}
+}
+.selectliek-choice {
+	background: #565859;
+}
+.selectliek-choice-select {
+	background: #818385;
+}
+.selectliek-closed .selectliek-choice {
+	background: #222324;
+}
+.selectliek-open {
+	z-index: 2;
+}
+.selectliek-text {
+	display: inline-block;
+	padding: 0 10px;
+	line-height: 24px;
+	white-space: nowrap;
+}
+.selecti {
+	padding: 0 0 4px;
+}
