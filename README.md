@@ -12,7 +12,7 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 ## Features
 
-- **Super smooth!** A lot of animation in this app. The aim is to create a Twitter with a fast and responsive UI. It runs at 45fps in Firefox 3. It has a [custom scrolling equation](http://me.dt.in.th/page/thaiWitterScrollingEquation) to ensure the smoothest timeline scrolling experience!
+- **Super smooth!** A lot of animation in this app. The aim is to create a Twitter client with a fast and responsive UI. It runs at 45fps in Firefox 3. It has a [custom scrolling equation](http://me.dt.in.th/page/thaiWitterScrollingEquation) to ensure the smoothest timeline scrolling experience!
 
 <p align="center">
   <img src="docs/images/screenshot1.png" width="405">
@@ -20,11 +20,11 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 - **Simple dark theme.** Designed for readability, I used a simple dark theme with a font that’s optimized for easy reading on screen (Verdana).
 
-- **Natural reading flow.** When you read books, you read from top-to-bottom. thaiWitter puts newer tweets at the bottom.
+- **Natural reading flow.** When you read books, you read from top-to-bottom. thaiWitter puts newer tweets at the bottom too, so you can follow the flow of the conversation in a natural way.
 
 - **Keyboard based.** You can tweet, favorite, reply, retweet, view threads, view images, and so on... all using keyboard.
 
-- **Desktop notifications.** Get notified even when you’re working on something else. Doesn’t work now because it relies on the old `webkitNotifications` API from 2010.
+- **Desktop notifications.** Get notified even when you’re working on something else. Doesn’t work anymore because it relies on the old `webkitNotifications` API from 2010.
 
 - **Show Client** — See who uses what to post to Twitter.
 
@@ -41,7 +41,7 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 - **User/List Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username` or `username/list-slug` to view it.
 
-- **List Updates Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username/list-slug!` to view only the latest tweet of each member in the list, sorted chronologically. Very useful if you want to see what your friends are up to after you haven’t used Twitter for a while.
+- **List Updates Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username/list-slug!` to view only the latest tweet of each member in the list, sorted chronologically. Very useful if you have a list of your friends and want to see what they up to after you haven’t used Twitter for a while.
 
 <p align="center">
   <img src="docs/images/screenshot4.png" width="416">
@@ -139,4 +139,4 @@ http://localhost:3003/
 
 ## License
 
-MIT
+MIT, unless stated otherwise
