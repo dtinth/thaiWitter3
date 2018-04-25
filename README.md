@@ -47,6 +47,8 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 
 - **List Updates Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username/list-slug!` to view only the latest tweet of each member in the list, sorted chronologically. Very useful if you have a list of your friends and want to see what they up to after you haven’t used Twitter for a while.
 
+- **Undo Tweet** — Press <kbd>Ctrl+Z</kbd> after tweeting to delete it tweet and put the tweet text back into the input box.
+
 <p align="center">
   <img src="docs/images/screenshot4.png" width="416">
   <img src="docs/images/screenshot5.png" width="416">
@@ -55,6 +57,8 @@ Now, in 2018, I am open-sourcing this project for posterity. I don’t have a pl
 - **Keyword Highlight** — You can put in a list of keywords, and they will be highlighted in blue.
 
 - **Mention Highlight** — Tweets that mention your name will be highlighted in red.
+
+- **Filter Keywords** — Filter out some keywords from your timeline.
 
 - **Hardcode Mode** — Removes the top bar and tweet input area at the bottom (you have to remember the keyboard shortcut). Start typing to activate the tweet input box.
 
