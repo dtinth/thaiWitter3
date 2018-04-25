@@ -10,6 +10,10 @@ Nevertheless, it’s still up running on Heroku to this day! In fact, I still us
 
 Now, in 2018, I am open-sourcing this project for posterity. I don’t have a plan to update it further yet, but feel free to fork this project!
 
+<p align="center">
+  <img src="public/thaiWitter.png">
+</p>
+
 ## Features
 
 - **Super smooth!** A lot of animation in this app. The aim is to create a Twitter client with a fast and responsive UI. It runs at 45fps in Firefox 3. It has a [custom scrolling equation](http://me.dt.in.th/page/thaiWitterScrollingEquation) to ensure the smoothest timeline scrolling experience!
