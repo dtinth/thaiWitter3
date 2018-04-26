@@ -4,9 +4,9 @@ thaiWitter
 
 **thaiWitter** is a web-based Twitter client that I have written back in 2009, when I was 16 years old. It is one of my first project of considerable size (codebase is more than 7000 lines).
 
-I have got several happy users who gave me a lot of great feedback for me to improve it. They are mentioned in the [Changelog](CHANGELOG.md) page.
+I have got several happy users who gave me a lot of great feedback for me to improve it. I felt really good about improving this project. They are mentioned in the [Changelog](CHANGELOG.md) page.
 
-But back at that time I lacked software engineering skills. I just threw a bunch of things I learned into this project. So, the project becomes less maintainable, and eventually, I stopped maintaining it in 2013.
+But back at that time I lacked software engineering skills. I just threw a bunch of things I learned into this project. So, the project becomes less maintainable, and eventually, I stopped maintaining it in 2013 due to its immense technical debt.
 
 Nevertheless, it’s still up running on Heroku to this day! In fact, I still use it occasionally. If you want to try it: https://tw3.herokuapp.com/
 
@@ -25,6 +25,8 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
   > [thaiWitter runs on Prism, an ancient technology, but it’s just the best Twitter client...](https://twitter.com/notnonene/status/453873974343000064) (Mozilla Prism is discontinued since 2010, this tweet is in 2014.)
   >
   > [Some people asked me, isn’t it cumbersome to use Twitter on the web? I answered, no, because I use thaiWitter.](https://twitter.com/minxkung/status/350082128253427712)
+  >
+  > [Temporarily switched to thaiWitter. This computer has a low spec and this is the smoothest client.](https://twitter.com/AdmOd/status/124538495908843521)
 
 - **Real-time streaming** — With Twitter Stream API, new tweets gets displayed instantly. This makes Twitter feel very much like a chat room, so you can keep on tweeting! Requires an [extension](https://github.com/dtinth/twclient2) to be able to do streaming.
 
@@ -44,9 +46,11 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 
 - **Natural reading flow.** When you read books, you read from top-to-bottom. thaiWitter puts newer tweets at the bottom too, so you can follow the flow of the conversation in a natural way.
 
+  > [In the end I had to switch back to thaiWitter. It’s faster and it’s easier to read.](https://twitter.com/notnonene/status/313354096960737280) (after switching to MetroTwit)
+
 - **Keyboard based.** You can tweet, favorite, reply, retweet, view threads, view images, and so on... all using keyboard.
 
-  > [In the end I had to switch back to thaiWitter. It’s faster and it’s easier to read.](https://twitter.com/notnonene/status/313354096960737280) (after switching to MetroTwit)
+  > [I’ll just use thaiWitter then. It’s most comfortable to use, I remembered al the keyboard shortcuts!](https://twitter.com/tannce/status/129574219548860416)
 
 - **Desktop notifications** — Get notified even when you’re working on something else. Doesn’t work anymore because it relies on the old `webkitNotifications` API from 2010.
 
@@ -66,6 +70,8 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 - **User/List Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username` or `username/list-slug` to view it.
 
 - **List Updates Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username/list-slug!` to view only the latest tweet of each member in the list, sorted chronologically. Very useful if you have a list of your friends and want to see what they up to after you haven’t used Twitter for a while.
+
+- **Retweeting** — thaiWitter supports retweeting, years before Twitter finally implemented it. You can retweet private tweet or even direct messages (but it will give you a warning.)
 
 - **Undo Tweet** — Press <kbd>Ctrl+Z</kbd> after tweeting to delete it tweet and put the tweet text back into the input box.
 
@@ -90,7 +96,7 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 
 - **Smart Username Autocomplete** — Completes the user name as you type. It uses an algorithm to determine who you might want to tweet to the most, and rank the suggestions accordingly.
 
-- **Custom CSS** — Allows you to put your own CSS to customize the UI. [Example](https://twitter.com/dtinth/status/149421023865995264)
+- **Custom CSS** — Allows you to put your own CSS to customize the UI. Examples: [\[1\]](https://twitter.com/dtinth/status/149421023865995264) [\[2\]](https://twitter.com/Pickyzzz/status/133569991814549504)
 
 - **Lots of easter eggs.** Can you find them all?
 
