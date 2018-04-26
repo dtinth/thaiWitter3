@@ -108,3 +108,4 @@ Few custom CSS:
 
 - Post to Twitter and Facebook at the same time.
 - Search and highlight keywords.
+- [More on my old blog](http://me.dt.in.th/page/thaiWitter3Preview).
