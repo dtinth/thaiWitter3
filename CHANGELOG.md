@@ -76,10 +76,35 @@ Few custom CSS:
   - Media Preview: enabled by default
   - Notification Pictures: enabled be default
 
-## 2012-03-16: 3.0.1
+## 2012-03-16: v3.0.1
 
 - Minor fixes.
 
-## 2012-03-01: 3.0.0
+## 2012-03-01: v3.0.0
 
 - Moved from a shared hosting provider to become hosted on Heroku.
+
+## 2011-11-23: [v3.0.-21](https://twitter.com/dtinth/status/139386498167480320)
+
+- Username autocompletion. (Press Tab to autocomplete)
+
+## 2011-11-19: [v3.0.-7](https://twitter.com/dtinth/status/137931079637151745)
+
+- Fixed a bug that prevents you from retweeting a direct message. (It gives you a warning though.)
+
+## 2011-11-12: [v3.0.-2](https://twitter.com/dtinth/status/135401102064623616)
+
+- Load a smaller image from Twitpic.
+
+## 2011-11-12: [v3.0.-1](https://twitter.com/dtinth/status/135334646840967168)
+
+- When opening a new window, it will inherit the size of the parent window.
+
+## 2011-11-09: [3.-¼.6](https://twitter.com/dtinth/status/134235159250731008)
+
+- URLs are now character-counted correctly.
+
+## New in V3
+
+- Post to Twitter and Facebook at the same time.
+- Search and highlight keywords.
