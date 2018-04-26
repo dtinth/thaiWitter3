@@ -32,7 +32,7 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 
   > [thaiWitter is so great for enjoying TV dramas \[together\], even better than a chat room!](https://twitter.com/Mameaw14/status/361142814265974785) [I just hit my API rate limit.](https://twitter.com/Mameaw14/status/361802052696948736)
   >
-  > [You can’t answer to tweets that fast because you are not using thaiWitter. Honestly!](https://twitter.com/minxkung/status/343737174799314944)
+  > [You can’t answer to tweets that fast because you are not using thaiWitter. Seriously!](https://twitter.com/minxkung/status/343737174799314944)
   >
   > [thaiWitter is so great for tweeting in bursts!](https://twitter.com/AliceSenzeXZ/status/172018990019907584)
 
@@ -50,7 +50,7 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 
 - **Keyboard based.** You can tweet, favorite, reply, retweet, view threads, view images, and so on... all using keyboard.
 
-  > [I’ll just use thaiWitter then. It’s most comfortable to use, I remembered al the keyboard shortcuts!](https://twitter.com/tannce/status/129574219548860416)
+  > [I’ll just use thaiWitter then. It’s most comfortable to use, I remembered all the keyboard shortcuts!](https://twitter.com/tannce/status/129574219548860416)
 
 - **Desktop notifications** — Get notified even when you’re working on something else. Doesn’t work anymore because it relies on the old `webkitNotifications` API from 2010.
 
@@ -71,7 +71,9 @@ Here is a list of feature with some (edited/paraphrased) testimonials (text in b
 
 - **List Updates Timeline** — Press <kbd>Ctrl+U</kbd> and type in the `username/list-slug!` to view only the latest tweet of each member in the list, sorted chronologically. Very useful if you have a list of your friends and want to see what they up to after you haven’t used Twitter for a while.
 
-- **Retweeting** — thaiWitter supports retweeting, years before Twitter finally implemented it. You can retweet private tweet or even direct messages (but it will give you a warning.)
+- **Retweeting** — thaiWitter supports retweeting, years before Twitter finally implemented it. You can even retweet private tweet or even direct messages (but it will give you a warning.)
+
+  - **Mutated tweet (MT)** — In Thai Twitter culture around that time, it’s common to retweet someone, but modify the text a bit for humorous effect. thaiWitter has a feature to track down the original tweet.
 
 - **Undo Tweet** — Press <kbd>Ctrl+Z</kbd> after tweeting to delete it tweet and put the tweet text back into the input box.
 
